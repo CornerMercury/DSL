@@ -1,10 +1,9 @@
 package DSL.frontend
 
 import parsley.Parsley
+import parsley.character.char
 import parsley.errors.ErrorBuilder
 import parsley.{Success, Failure, Result}
-
-// 1. Import Expression parsing tools
 import parsley.expr.{precedence, Ops, InfixL}
 
 import DSL.frontend.lexer.implicits.implicitSymbol
@@ -19,31 +18,42 @@ object parser {
     }
   }
 
-  // The top-level parser is now an expression
   private lazy val parser: Parsley[AstNode] = fully(expr)
 
   /** ******************************* 
-    * Expression Parser (Precedence)
+    * Expression Parser
     * ******************************* */
   
+  private val diceOp = char('d')
+
+  // ORDER MATTERS HERE: Top = Tightest Binding
   private lazy val expr: Parsley[Expr] = precedence[Expr](atom)(
     Ops(InfixL)(
+      diceOp #> Dice.apply 
+    ),
+    Ops(InfixL)(
+      "*" #> Mul.apply,
+      "/" #> Div.apply
+    ),
+    Ops(InfixL)(
       "+" #> Add.apply,
-      "-" #> Sub.apply 
+      "-" #> Sub.apply
     )
   )
 
   /** ******************************* 
-    * Atoms (Basic Units)
+    * Atoms
     * ******************************* */
 
-  private lazy val atom: Parsley[Expr] = die <|> literal
-
-  private lazy val die: Parsley[Die] = {
-    ("d" ~> integer).map(sides => Die(sides))
-  }
+  private lazy val atom: Parsley[Expr] = literal <|> prefixDice <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = {
     integer.map(n => IntLiteral(n))
   }
+
+  private lazy val prefixDice: Parsley[Dice] = {
+    diceOp ~> atom.map(sides => Dice(IntLiteral(1), sides))
+  }
+
+  private lazy val parens: Parsley[Expr] = "(" ~> expr <~ ")"
 }
