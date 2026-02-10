@@ -7,7 +7,7 @@ import parsley.{Success, Failure, Result}
 import parsley.expr.{precedence, Ops, InfixL}
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, fully, sumKeyword}
+import DSL.frontend.lexer.{integer, fully, sumKeyword, prodKeyword}
 import DSL.frontend.AST._
 
 object parser {
@@ -26,9 +26,9 @@ object parser {
   
   private val diceOp = char('d')
 
-  // Term: dice, *, / (no +, -). Used so sum 2d6 binds one term.
+  // Term: dice (default to sum), *, / (no +, -). Used so sum/prod 2d6 bind one term.
   private lazy val term: Parsley[Expr] = precedence[Expr](atom)(
-    Ops(InfixL)(diceOp #> Dice.apply),
+    Ops(InfixL)(diceOp #> ((c: Expr, s: Expr) => Sum(Dice(c, s)))),
     Ops(InfixL)("*" #> Mul.apply, "/" #> Div.apply)
   )
 
@@ -44,7 +44,7 @@ object parser {
     * Atoms
     * ******************************* */
 
-  private lazy val atom: Parsley[Expr] = literal <|> sumCall <|> prefixDice <|> parens
+  private lazy val atom: Parsley[Expr] = literal <|> sumCall <|> prodCall <|> prefixDice <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = {
     integer.map(n => IntLiteral(n))
@@ -55,8 +55,14 @@ object parser {
     (sumKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Sum.apply)
   }
 
-  private lazy val prefixDice: Parsley[Dice] = {
-    diceOp ~> atom.map(sides => Dice(IntLiteral(1), sides))
+  // prod(expr) or prod expr (product of dice)
+  private lazy val prodCall: Parsley[Prod] = {
+    (prodKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Prod.apply)
+  }
+
+  // prefix dN defaults to sum (1dN)
+  private lazy val prefixDice: Parsley[Sum] = {
+    diceOp ~> atom.map(sides => Sum(Dice(IntLiteral(1), sides)))
   }
 
   private lazy val parens: Parsley[Expr] = "(" ~> expr <~ ")"

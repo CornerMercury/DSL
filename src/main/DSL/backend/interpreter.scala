@@ -21,6 +21,10 @@ object interpreter {
     case Sum(inner) =>
       eval(inner)
 
+    case Prod(inner) =>
+      // TODO: implement product-of-dice distribution (frontend parsing done first)
+      eval(inner)
+
     case Add(left, right) =>
       convolve(eval(left), eval(right), _ + _)
 

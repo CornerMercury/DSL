@@ -16,6 +16,7 @@ object optimiser {
     
     case Dice(c, s) => Dice(optimiseExpr(c), optimiseExpr(s))
     case Sum(inner) => Sum(optimiseExpr(inner))
+    case Prod(inner) => Prod(optimiseExpr(inner))
 
     case other => other
   }

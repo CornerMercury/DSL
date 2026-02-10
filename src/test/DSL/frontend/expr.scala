@@ -31,14 +31,14 @@ class DiceParserSpec extends AnyFlatSpec {
     assertParse("0", IntLiteral(0))
   }
 
-  "Basic Dice (Prefix)" should "parse as 1 die of N sides" in {
-    assertParse("d6", Dice(IntLiteral(1), IntLiteral(6)))
-    assertParse("d20", Dice(IntLiteral(1), IntLiteral(20)))
+  "Basic Dice (Prefix)" should "parse as 1 die of N sides (default sum)" in {
+    assertParse("d6", Sum(Dice(IntLiteral(1), IntLiteral(6))))
+    assertParse("d20", Sum(Dice(IntLiteral(1), IntLiteral(20))))
   }
 
-  "Dice Pools (Infix)" should "parse as N dice of S sides" in {
-    assertParse("3d6", Dice(IntLiteral(3), IntLiteral(6)))
-    assertParse("10d100", Dice(IntLiteral(10), IntLiteral(100)))
+  "Dice Pools (Infix)" should "parse as N dice of S sides (default sum)" in {
+    assertParse("3d6", Sum(Dice(IntLiteral(3), IntLiteral(6))))
+    assertParse("10d100", Sum(Dice(IntLiteral(10), IntLiteral(100))))
   }
 
   "Basic Math" should "parse basic arithmetic" in {
@@ -61,29 +61,42 @@ class DiceParserSpec extends AnyFlatSpec {
   }
 
   "Dice Precedence" should "bind tighter than math" in {
-    // 3d6 + 5 -> (3d6) + 5
+    // 3d6 + 5 -> (3d6) + 5, bare dice default to sum
     assertParse("3d6 + 5", 
-      Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))
+      Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))
     )
 
     // 2 * d20 -> 2 * (1d20)
     assertParse("2 * d20", 
-      Mul(IntLiteral(2), Dice(IntLiteral(1), IntLiteral(20)))
+      Mul(IntLiteral(2), Sum(Dice(IntLiteral(1), IntLiteral(20))))
     )
   }
 
   "Sum" should "parse sum(expr) correctly" in {
-    assertParse("sum(2d6)", Sum(Dice(IntLiteral(2), IntLiteral(6))))
-    assertParse("sum(d20)", Sum(Dice(IntLiteral(1), IntLiteral(20))))
+    // 2d6 inside sum is parsed as term -> Sum(Dice(...))
+    assertParse("sum(2d6)", Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
+    assertParse("sum(d20)", Sum(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
     assertParse("sum(1 + 2)", Sum(Add(IntLiteral(1), IntLiteral(2))))
-    assertParse("sum(3d6 + 5)", Sum(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))))
+    assertParse("sum(3d6 + 5)", Sum(Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))))
   }
 
   "Sum" should "parse sum expr without parens (Haskell-style, binds one term)" in {
-    assertParse("sum 2d6", Sum(Dice(IntLiteral(2), IntLiteral(6))))
-    assertParse("sum d20", Sum(Dice(IntLiteral(1), IntLiteral(20))))
+    assertParse("sum 2d6", Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
+    assertParse("sum d20", Sum(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
     // sum binds to 2d6 only, then + 5
-    assertParse("sum 2d6 + 5", Add(Sum(Dice(IntLiteral(2), IntLiteral(6))), IntLiteral(5)))
+    assertParse("sum 2d6 + 5", Add(Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))), IntLiteral(5)))
+  }
+
+  "Prod" should "parse prod(expr) correctly" in {
+    assertParse("prod(2d6)", Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
+    assertParse("prod(d20)", Prod(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
+    assertParse("prod(3d6 + 5)", Prod(Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))))
+  }
+
+  "Prod" should "parse prod expr without parens (Haskell-style, binds one term)" in {
+    assertParse("prod 2d6", Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
+    assertParse("prod d20", Prod(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
+    assertParse("prod 2d6 + 5", Add(Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))), IntLiteral(5)))
   }
 
   "Parentheses" should "override precedence" in {
@@ -92,14 +105,14 @@ class DiceParserSpec extends AnyFlatSpec {
       Mul(Add(IntLiteral(1), IntLiteral(2)), IntLiteral(3))
     )
 
-    // d(4 + 4) -> 1d8
+    // d(4 + 4) -> 1d8 (default sum)
     assertParse("d(4 + 4)", 
-      Dice(IntLiteral(1), Add(IntLiteral(4), IntLiteral(4)))
+      Sum(Dice(IntLiteral(1), Add(IntLiteral(4), IntLiteral(4))))
     )
 
     // (1 + 1)d6
     assertParse("(1 + 1)d6", 
-      Dice(Add(IntLiteral(1), IntLiteral(1)), IntLiteral(6))
+      Sum(Dice(Add(IntLiteral(1), IntLiteral(1)), IntLiteral(6)))
     )
   }
 
@@ -107,7 +120,7 @@ class DiceParserSpec extends AnyFlatSpec {
     // (3d6 + 5) * 2
     assertParse("(3d6 + 5) * 2",
       Mul(
-        Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5)), 
+        Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5)), 
         IntLiteral(2)
       )
     )

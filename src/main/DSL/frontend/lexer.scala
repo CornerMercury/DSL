@@ -19,7 +19,7 @@ object lexer {
             identifierLetter = Basic(c => Character.isLetterOrDigit(c) || c == '_'),
         ),
 
-        SymbolDesc.plain.copy(hardKeywords = Set("sum")),
+        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod")),
 
         NumericDesc.plain.copy(
             integerNumbersCanBeHexadecimal = false,
@@ -38,8 +38,9 @@ object lexer {
     // basic token type parsers
     val integer = lexer.lexeme.integer.decimal32
 
-    // keywords: "sum" is reserved via SymbolDesc; next token must be "(" in parser so "summary" fails there
+    // keywords: "sum" and "prod" are reserved via SymbolDesc
     val sumKeyword = lexer.lexeme(string("sum"))
+    val prodKeyword = lexer.lexeme(string("prod"))
 
     // symbols and whitespace parsers
     val implicits = lexer.lexeme.symbol.implicits
