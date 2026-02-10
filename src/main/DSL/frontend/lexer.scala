@@ -1,6 +1,7 @@
 package DSL.frontend
 
 import parsley.Parsley
+import parsley.character.string
 import parsley.token.Lexer
 import parsley.token.predicate.Basic 
 import parsley.token.descriptions.numeric.NumericDesc
@@ -18,7 +19,7 @@ object lexer {
             identifierLetter = Basic(c => Character.isLetterOrDigit(c) || c == '_'),
         ),
 
-        SymbolDesc.plain,
+        SymbolDesc.plain.copy(hardKeywords = Set("sum")),
 
         NumericDesc.plain.copy(
             integerNumbersCanBeHexadecimal = false,
@@ -36,6 +37,9 @@ object lexer {
 
     // basic token type parsers
     val integer = lexer.lexeme.integer.decimal32
+
+    // keywords: "sum" is reserved via SymbolDesc; next token must be "(" in parser so "summary" fails there
+    val sumKeyword = lexer.lexeme(string("sum"))
 
     // symbols and whitespace parsers
     val implicits = lexer.lexeme.symbol.implicits

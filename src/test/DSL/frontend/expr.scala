@@ -72,6 +72,20 @@ class DiceParserSpec extends AnyFlatSpec {
     )
   }
 
+  "Sum" should "parse sum(expr) correctly" in {
+    assertParse("sum(2d6)", Sum(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("sum(d20)", Sum(Dice(IntLiteral(1), IntLiteral(20))))
+    assertParse("sum(1 + 2)", Sum(Add(IntLiteral(1), IntLiteral(2))))
+    assertParse("sum(3d6 + 5)", Sum(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))))
+  }
+
+  "Sum" should "parse sum expr without parens (Haskell-style, binds one term)" in {
+    assertParse("sum 2d6", Sum(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("sum d20", Sum(Dice(IntLiteral(1), IntLiteral(20))))
+    // sum binds to 2d6 only, then + 5
+    assertParse("sum 2d6 + 5", Add(Sum(Dice(IntLiteral(2), IntLiteral(6))), IntLiteral(5)))
+  }
+
   "Parentheses" should "override precedence" in {
     // (1 + 2) * 3
     assertParse("(1 + 2) * 3", 
