@@ -15,6 +15,7 @@ object optimiser {
     case Div(l, r) => foldDiv(optimiseExpr(l), optimiseExpr(r))
     
     case Dice(c, s) => Dice(optimiseExpr(c), optimiseExpr(s))
+    case Sum(inner) => Sum(optimiseExpr(inner))
 
     case other => other
   }
