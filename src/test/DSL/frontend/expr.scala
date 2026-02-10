@@ -26,103 +26,74 @@ class DiceParserSpec extends AnyFlatSpec {
     }
   }
 
-  "Integer literals" should "be parsed correctly" in {
-    assertParse("42", IntLiteral(42))
-    assertParse("0", IntLiteral(0))
+  "Integer literals" should "parse as root Sum(expr)" in {
+    assertParse("42", Sum(IntLiteral(42)))
+    assertParse("0", Sum(IntLiteral(0)))
   }
 
-  "Basic Dice (Prefix)" should "parse as 1 die of N sides (default sum)" in {
+  "Basic Dice (Prefix)" should "parse as Sum(Dice(1, N))" in {
     assertParse("d6", Sum(Dice(IntLiteral(1), IntLiteral(6))))
     assertParse("d20", Sum(Dice(IntLiteral(1), IntLiteral(20))))
   }
 
-  "Dice Pools (Infix)" should "parse as N dice of S sides (default sum)" in {
+  "Dice Pools (Infix)" should "parse as Sum(Dice(N, S))" in {
     assertParse("3d6", Sum(Dice(IntLiteral(3), IntLiteral(6))))
     assertParse("10d100", Sum(Dice(IntLiteral(10), IntLiteral(100))))
   }
 
-  "Basic Math" should "parse basic arithmetic" in {
-    assertParse("1 + 2", Add(IntLiteral(1), IntLiteral(2)))
-    assertParse("5 - 3", Sub(IntLiteral(5), IntLiteral(3)))
-    assertParse("4 * 2", Mul(IntLiteral(4), IntLiteral(2)))
-    assertParse("10 / 2", Div(IntLiteral(10), IntLiteral(2)))
+  "d6 + 7" should "parse as Sum(Add(Dice(1,6), 7))" in {
+    assertParse("d6 + 7", Sum(Add(Dice(IntLiteral(1), IntLiteral(6)), IntLiteral(7))))
+  }
+
+  "Basic Math" should "parse as root Sum(expr)" in {
+    assertParse("1 + 2", Sum(Add(IntLiteral(1), IntLiteral(2))))
+    assertParse("5 - 3", Sum(Sub(IntLiteral(5), IntLiteral(3))))
+    assertParse("4 * 2", Sum(Mul(IntLiteral(4), IntLiteral(2))))
+    assertParse("10 / 2", Sum(Div(IntLiteral(10), IntLiteral(2))))
   }
 
   "Precedence" should "respect BODMAS/PEMDAS logic" in {
-    // 1 + 2 * 3 -> 1 + (2 * 3)
-    assertParse("1 + 2 * 3", 
-      Add(IntLiteral(1), Mul(IntLiteral(2), IntLiteral(3)))
-    )
-
-    // 2 * 3 + 1 -> (2 * 3) + 1
-    assertParse("2 * 3 + 1", 
-      Add(Mul(IntLiteral(2), IntLiteral(3)), IntLiteral(1))
-    )
+    assertParse("1 + 2 * 3", Sum(Add(IntLiteral(1), Mul(IntLiteral(2), IntLiteral(3)))))
+    assertParse("2 * 3 + 1", Sum(Add(Mul(IntLiteral(2), IntLiteral(3)), IntLiteral(1))))
   }
 
   "Dice Precedence" should "bind tighter than math" in {
-    // 3d6 + 5 -> (3d6) + 5, bare dice default to sum
-    assertParse("3d6 + 5", 
-      Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))
-    )
-
-    // 2 * d20 -> 2 * (1d20)
-    assertParse("2 * d20", 
-      Mul(IntLiteral(2), Sum(Dice(IntLiteral(1), IntLiteral(20))))
-    )
+    assertParse("3d6 + 5", Sum(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))))
+    assertParse("2 * d20", Sum(Mul(IntLiteral(2), Dice(IntLiteral(1), IntLiteral(20)))))
   }
 
-  "Sum" should "parse sum(expr) correctly" in {
-    // 2d6 inside sum is parsed as term -> Sum(Dice(...))
-    assertParse("sum(2d6)", Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
-    assertParse("sum(d20)", Sum(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
+  "Sum" should "parse sum(expr) correctly (one Sum, bare Dice inside)" in {
+    assertParse("sum(2d6)", Sum(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("sum(d20)", Sum(Dice(IntLiteral(1), IntLiteral(20))))
     assertParse("sum(1 + 2)", Sum(Add(IntLiteral(1), IntLiteral(2))))
-    assertParse("sum(3d6 + 5)", Sum(Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))))
+    assertParse("sum(3d6 + 5)", Sum(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))))
   }
 
-  "Sum" should "parse sum expr without parens (Haskell-style, binds one term)" in {
-    assertParse("sum 2d6", Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
-    assertParse("sum d20", Sum(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
-    // sum binds to 2d6 only, then + 5
-    assertParse("sum 2d6 + 5", Add(Sum(Sum(Dice(IntLiteral(2), IntLiteral(6)))), IntLiteral(5)))
+  "Sum" should "parse sum expr without parens (Haskell-style)" in {
+    assertParse("sum 2d6", Sum(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("sum d20", Sum(Dice(IntLiteral(1), IntLiteral(20))))
+    assertParse("sum 2d6 + 5", Sum(Add(Sum(Dice(IntLiteral(2), IntLiteral(6))), IntLiteral(5))))
   }
 
   "Prod" should "parse prod(expr) correctly" in {
-    assertParse("prod(2d6)", Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
-    assertParse("prod(d20)", Prod(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
-    assertParse("prod(3d6 + 5)", Prod(Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5))))
+    assertParse("prod(2d6)", Prod(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("prod(d20)", Prod(Dice(IntLiteral(1), IntLiteral(20))))
+    assertParse("prod(3d6 + 5)", Prod(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5))))
   }
 
-  "Prod" should "parse prod expr without parens (Haskell-style, binds one term)" in {
-    assertParse("prod 2d6", Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))))
-    assertParse("prod d20", Prod(Sum(Dice(IntLiteral(1), IntLiteral(20)))))
-    assertParse("prod 2d6 + 5", Add(Prod(Sum(Dice(IntLiteral(2), IntLiteral(6)))), IntLiteral(5)))
+  "Prod" should "parse prod expr without parens (Haskell-style)" in {
+    assertParse("prod 2d6", Prod(Dice(IntLiteral(2), IntLiteral(6))))
+    assertParse("prod d20", Prod(Dice(IntLiteral(1), IntLiteral(20))))
+    assertParse("prod 2d6 + 5", Sum(Add(Prod(Dice(IntLiteral(2), IntLiteral(6))), IntLiteral(5))))
   }
 
   "Parentheses" should "override precedence" in {
-    // (1 + 2) * 3
-    assertParse("(1 + 2) * 3", 
-      Mul(Add(IntLiteral(1), IntLiteral(2)), IntLiteral(3))
-    )
-
-    // d(4 + 4) -> 1d8 (default sum)
-    assertParse("d(4 + 4)", 
-      Sum(Dice(IntLiteral(1), Add(IntLiteral(4), IntLiteral(4))))
-    )
-
-    // (1 + 1)d6
-    assertParse("(1 + 1)d6", 
-      Sum(Dice(Add(IntLiteral(1), IntLiteral(1)), IntLiteral(6)))
-    )
+    assertParse("(1 + 2) * 3", Sum(Mul(Add(IntLiteral(1), IntLiteral(2)), IntLiteral(3))))
+    assertParse("d(4 + 4)", Sum(Dice(IntLiteral(1), Add(IntLiteral(4), IntLiteral(4)))))
+    assertParse("(1 + 1)d6", Sum(Dice(Add(IntLiteral(1), IntLiteral(1)), IntLiteral(6))))
   }
 
   "Complex Expressions" should "parse correctly" in {
-    // (3d6 + 5) * 2
-    assertParse("(3d6 + 5) * 2",
-      Mul(
-        Add(Sum(Dice(IntLiteral(3), IntLiteral(6))), IntLiteral(5)), 
-        IntLiteral(2)
-      )
-    )
+    assertParse("(3d6 + 5) * 2", Sum(Mul(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5)), IntLiteral(2))))
   }
 }

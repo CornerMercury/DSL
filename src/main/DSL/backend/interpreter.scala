@@ -6,44 +6,53 @@ import DSL.frontend.AST._
 type Distribution = Map[Int, Double]
 
 object interpreter {
-  
-  def interpret(expr: Expr): Distribution = eval(expr)
 
-  private def eval(expr: Expr): Distribution = expr match {
-    case IntLiteral(n) =>
-      Map(n -> 1.0)
+  /** Interpret only Sum or Prod at the root; rejects other top-level expressions. */
+  def interpret(expr: Expr): Distribution = expr match {
+    case Sum(inner) => evalSum(inner)
+    case Prod(inner) => evalProd(inner)
+    case other      => throw new IllegalArgumentException(s"Interpreter expects root to be Sum or Prod, got: $other")
+  }
 
-    case Dice(countExpr, sidesExpr) =>
-      val countDist = eval(countExpr)
-      val sidesDist = eval(sidesExpr)
-      combineDice(countDist, sidesDist)
+  private def evalSum(expr: Expr): Distribution = expr match {
+    case IntLiteral(n)     => Map(n -> 1.0)
+    case Dice(c, s)       => combineDiceSum(evalSum(c), evalSum(s))
+    case Sum(inner)       => evalSum(inner)
+    case Prod(inner)      => evalProd(inner)
+    case Add(l, r)        => convolve(evalSum(l), evalSum(r), _ + _)
+    case Sub(l, r)        => convolveSub(evalSum(l), evalSum(r))
+    case Mul(l, r)        => convolve(evalSum(l), evalSum(r), _ * _)
+    case Div(l, r)        => convolveDiv(evalSum(l), evalSum(r))
+  }
 
-    case Sum(inner) =>
-      eval(inner)
-
-    case Prod(inner) =>
-      // TODO: implement product-of-dice distribution (frontend parsing done first)
-      eval(inner)
-
-    case Add(left, right) =>
-      convolve(eval(left), eval(right), _ + _)
-
-    case Sub(left, right) =>
-      convolveSub(eval(left), eval(right))
-
-    case Mul(left, right) =>
-      convolve(eval(left), eval(right), _ * _)
-
-    case Div(left, right) =>
-      convolveDiv(eval(left), eval(right))
+  private def evalProd(expr: Expr): Distribution = expr match {
+    case IntLiteral(n)     => Map(n -> 1.0)
+    case Dice(c, s)       => combineDiceProd(evalProd(c), evalProd(s))
+    case Sum(inner)       => evalSum(inner)
+    case Prod(inner)      => evalProd(inner)
+    case Add(l, r)        => convolve(evalProd(l), evalProd(r), _ + _)
+    case Sub(l, r)        => convolveSub(evalProd(l), evalProd(r))
+    case Mul(l, r)        => convolve(evalProd(l), evalProd(r), _ * _)
+    case Div(l, r)        => convolveDiv(evalProd(l), evalProd(r))
   }
 
   /** For each (c, s) with prob p_c * p_s, add the distribution of c dice with s sides (sum). */
-  private def combineDice(countDist: Distribution, sidesDist: Distribution): Distribution = {
+  private def combineDiceSum(countDist: Distribution, sidesDist: Distribution): Distribution = {
     var result: Distribution = Map.empty
     for ((c, pC) <- countDist; (s, pS) <- sidesDist) {
       val p = pC * pS
       val d = diceSumDistribution(safeCount(c), safeSides(s))
+      result = mergeDistributions(result, scaleDistribution(d, p))
+    }
+    result
+  }
+
+  /** For each (c, s) with prob p_c * p_s, add the distribution of product of c dice with s sides. */
+  private def combineDiceProd(countDist: Distribution, sidesDist: Distribution): Distribution = {
+    var result: Distribution = Map.empty
+    for ((c, pC) <- countDist; (s, pS) <- sidesDist) {
+      val p = pC * pS
+      val d = diceProductDistribution(safeCount(c), safeSides(s))
       result = mergeDistributions(result, scaleDistribution(d, p))
     }
     result
@@ -57,6 +66,13 @@ object interpreter {
     if (count <= 0) return Map(0 -> 1.0)
     val oneDie = (1 to sides).map(_ -> (1.0 / sides)).toMap
     (1 until count).foldLeft(oneDie) { (acc, _) => convolve(acc, oneDie, _ + _) }
+  }
+
+  /** Distribution of the product of `count` dice each with faces 1..sides (uniform). */
+  private def diceProductDistribution(count: Int, sides: Int): Distribution = {
+    if (count <= 0) return Map(1 -> 1.0)
+    val oneDie = (1 to sides).map(_ -> (1.0 / sides)).toMap
+    (1 until count).foldLeft(oneDie) { (acc, _) => convolve(acc, oneDie, _ * _) }
   }
 
   /** Convolve two distributions with combination function f(v1, v2). */

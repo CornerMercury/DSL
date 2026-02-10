@@ -18,7 +18,13 @@ object parser {
     }
   }
 
-  private lazy val parser: Parsley[AstNode] = fully(expr)
+  // Wrap root in Sum so backend always sees Sum/Prod; dice stay bare inside.
+  private def wrapInSumIfNeeded(e: Expr): Expr = e match {
+    case _: Sum | _: Prod => e
+    case _                => Sum(e)
+  }
+
+  private lazy val parser: Parsley[AstNode] = fully(expr).map(wrapInSumIfNeeded)
 
   /** ******************************* 
     * Expression Parser
@@ -26,9 +32,9 @@ object parser {
   
   private val diceOp = char('d')
 
-  // Term: dice (default to sum), *, / (no +, -). Used so sum/prod 2d6 bind one term.
+  // Term: dice (bare), *, / (no +, -). Used so sum/prod 2d6 bind one term.
   private lazy val term: Parsley[Expr] = precedence[Expr](atom)(
-    Ops(InfixL)(diceOp #> ((c: Expr, s: Expr) => Sum(Dice(c, s)))),
+    Ops(InfixL)(diceOp #> Dice.apply),
     Ops(InfixL)("*" #> Mul.apply, "/" #> Div.apply)
   )
 
@@ -60,9 +66,9 @@ object parser {
     (prodKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Prod.apply)
   }
 
-  // prefix dN defaults to sum (1dN)
-  private lazy val prefixDice: Parsley[Sum] = {
-    diceOp ~> atom.map(sides => Sum(Dice(IntLiteral(1), sides)))
+  // prefix dN = 1dN (bare Dice)
+  private lazy val prefixDice: Parsley[Dice] = {
+    diceOp ~> atom.map(sides => Dice(IntLiteral(1), sides))
   }
 
   private lazy val parens: Parsley[Expr] = "(" ~> expr <~ ")"
