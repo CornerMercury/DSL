@@ -4,7 +4,6 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers.*
 import DSL.frontend.AST._
 import DSL.backend.interpreter
-import DSL.backend.typedInterpreter
 import DSL.backend.typedAST
 import DSL.backend.{ScalarTy, BinomialTy, UniformTy, GenericDistTy}
 
@@ -62,51 +61,39 @@ class TypedInterpreterSpec extends AnyFlatSpec {
     err.getMessage should include("Sum or Prod")
   }
 
-  "typedInterpreter.interpret" should "match interpretWithTypes distribution for sum(2d6+5)" in {
+  "interpretWithTypes distribution" should "match interpret for sum(2d6+5)" in {
     val expr = Sum(Add(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(5)))
-    val (distFromTyped, tyAst) = interpreter.interpretWithTypes(expr)
-    val distViaTypedInterpreter = typedInterpreter.interpret(tyAst)
-    distFromTyped shouldEqual distViaTypedInterpreter
-    distFromTyped.keySet shouldEqual (7 to 17).toSet
-    distFromTyped.values.sum shouldBe 1.0 +- 1e-9
+    val (dist, _) = interpreter.interpretWithTypes(expr)
+    val distViaInterpret = interpreter.interpret(expr)
+    dist shouldEqual distViaInterpret
+    dist.keySet shouldEqual (7 to 17).toSet
+    dist.values.sum shouldBe 1.0 +- 1e-9
   }
 
-  it should "match untyped interpreter for sum(2d6)" in {
+  it should "match interpret for sum(2d6)" in {
     val expr = Sum(Dice(IntLiteral(2), IntLiteral(6)))
-    val (distFromTyped, tyAst) = interpreter.interpretWithTypes(expr)
+    val (distFromTyped, _) = interpreter.interpretWithTypes(expr)
     val distUntyped = interpreter.interpret(expr)
-    val distTypedInterp = typedInterpreter.interpret(tyAst)
     distFromTyped shouldEqual distUntyped
-    distFromTyped shouldEqual distTypedInterp
   }
 
-  it should "match untyped interpreter for prod(2d6)" in {
+  it should "match interpret for prod(2d6)" in {
     val expr = Prod(Dice(IntLiteral(2), IntLiteral(6)))
-    val (distFromTyped, tyAst) = interpreter.interpretWithTypes(expr)
+    val (distFromTyped, _) = interpreter.interpretWithTypes(expr)
     val distUntyped = interpreter.interpret(expr)
-    val distTypedInterp = typedInterpreter.interpret(tyAst)
     distFromTyped shouldEqual distUntyped
-    distFromTyped shouldEqual distTypedInterp
   }
 
   it should "match for sum(1d2 + 1d2) (binomial + binomial -> generic)" in {
     val expr = Sum(Add(Dice(IntLiteral(1), IntLiteral(2)), Dice(IntLiteral(1), IntLiteral(2))))
     val (dist, tyAst) = interpreter.interpretWithTypes(expr)
     tyAst.ty shouldBe GenericDistTy
-    typedInterpreter.interpret(tyAst) shouldEqual dist
     dist shouldEqual Map(2 -> 0.25, 3 -> 0.5, 4 -> 0.25)
   }
 
   it should "match for prod(2d6 * 2)" in {
     val expr = Prod(Mul(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(2)))
-    val (dist, tyAst) = interpreter.interpretWithTypes(expr)
-    typedInterpreter.interpret(tyAst) shouldEqual dist
+    val (dist, _) = interpreter.interpretWithTypes(expr)
     dist.values.sum shouldBe 1.0 +- 1e-9
-  }
-
-  it should "reject non-Sum/Prod root" in {
-    val badRoot = typedAST.TyIntLiteral(1, UniformTy)
-    val err = the[IllegalArgumentException] thrownBy typedInterpreter.interpret(badRoot)
-    err.getMessage should include("root Sum or Prod")
   }
 }

@@ -56,13 +56,14 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
     case e: Exception => return (s"File Read Error: ${e.getMessage}", ExitCode.FileErr)
   }
 
+  // Pipeline: parse -> optimise -> typing & interpreting (single pass)
   parser.parse(input) match {
     case Success(ast: Expr) =>
       val optimised = optimiser.optimise(ast).asInstanceOf[Expr]
       val (dist, tyAst) = interpreter.interpretWithTypes(optimised)
       val distLines = dist.toSeq.sortBy(_._1).map { case (v, p) => f"  $v%6d  ${p * 100}%6.2f%%" }
       val distBlock = "Distribution (value → probability):\n" + distLines.mkString("\n")
-      val typeBlock = "Typed AST (distribution kinds: Binomial > Uniform > Generic):\n  " + showTy(tyAst)
+      val typeBlock = "Typed AST (distribution kinds: Scalar > Binomial > Uniform > Generic):\n  " + showTy(tyAst)
       (s"AST: $optimised\n$typeBlock\n$distBlock", ExitCode.Success)
 
     case Success(_) =>
