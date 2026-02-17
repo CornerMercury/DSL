@@ -35,6 +35,12 @@ object interpreter {
       val d = SmartConstructors.dice(dC, dS, mode)
       (d, TyBinary(BinaryOp.Dice, tC, tS, classify(d)))
 
+    case CustomDist(raw) =>
+      // Normalize probabilities to ensure they sum to 1.0
+      val total = raw.values.sum
+      val d = if (total == 0) Map(0 -> 1.0) else raw.view.mapValues(_ / total).toMap
+      (d, TyCustomDist(d, classify(d)))
+
     case Add(l, r) =>
       val (dL, tL) = eval(l, mode)
       val (dR, tR) = eval(r, mode)

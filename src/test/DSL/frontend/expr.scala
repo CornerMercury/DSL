@@ -96,4 +96,65 @@ class DiceParserSpec extends AnyFlatSpec {
   "Complex Expressions" should "parse correctly" in {
     assertParse("(3d6 + 5) * 2", Sum(Mul(Add(Dice(IntLiteral(3), IntLiteral(6)), IntLiteral(5)), IntLiteral(2))))
   }
+
+  "Custom Distributions (Literals)" should "parse a basic mapping" in {
+    assertParse("{1: 0.5, 2: 0.5}", Sum(CustomDist(Map(1 -> 0.5, 2 -> 0.5))))
+  }
+
+  it should "handle a single outcome" in {
+    assertParse("{20: 1.0}", Sum(CustomDist(Map(20 -> 1.0))))
+  }
+
+  it should "handle empty distributions (due to sepBy)" in {
+    assertParse("{}", Sum(CustomDist(Map.empty)))
+  }
+
+  it should "handle scientific notation if the lexer allows it" in {
+    // Assuming 'double' in lexer handles 1e-1
+    assertParse("{0: 0.9, 1: 1e-1}", Sum(CustomDist(Map(0 -> 0.9, 1 -> 0.1))))
+  }
+
+  "Custom Distributions with Dice" should "work as the number of sides (Prefix)" in {
+    // d{4: 0.5, 6: 0.5} -> A die where sides are determined by a distribution
+    val dist = CustomDist(Map(4 -> 0.5, 6 -> 0.5))
+    assertParse("d{4: 0.5, 6: 0.5}", Sum(Dice(IntLiteral(1), dist)))
+  }
+
+  it should "work as the pool size (Infix)" in {
+    // {1: 0.9, 2: 0.1}d6 -> Either 1d6 or 2d6 based on the distribution
+    val dist = CustomDist(Map(1 -> 0.9, 2 -> 0.1))
+    assertParse("{1: 0.9, 2: 0.1}d6", Sum(Dice(dist, IntLiteral(6))))
+  }
+
+  it should "allow nested dice within the distribution syntax if atoms are allowed" in {
+    // Note: Your current 'entry' is 'integer <~> (":" ~> double)'. 
+    // This test ensures the keys are specifically integers.
+    assertParse("{1: 0.1, 10: 0.9}", Sum(CustomDist(Map(1 -> 0.1, 10 -> 0.9))))
+  }
+
+  "Custom Distributions with Keywords" should "work with sum(...) and prod(...)" in {
+    val dist = CustomDist(Map(1 -> 0.5, 2 -> 0.5))
+    assertParse("sum({1: 0.5, 2: 0.5})", Sum(dist))
+    assertParse("prod({1: 0.5, 2: 0.5})", Prod(dist))
+  }
+
+  it should "work with sum/prod without parentheses (Haskell-style)" in {
+    val dist = CustomDist(Map(1 -> 0.5, 2 -> 0.5))
+    assertParse("sum {1: 0.5, 2: 0.5}", Sum(dist))
+    assertParse("prod {1: 0.5, 2: 0.5}", Prod(dist))
+  }
+
+  "Custom Distributions in Math" should "respect precedence" in {
+    val dist = CustomDist(Map(1 -> 0.5, 6 -> 0.5))
+    // Math addition
+    assertParse("{1: 0.5, 6: 0.5} + 10", Sum(Add(dist, IntLiteral(10))))
+    // Multiplication
+    assertParse("2 * {1: 0.5, 6: 0.5}", Sum(Mul(IntLiteral(2), dist)))
+  }
+
+  "Whitespace and Delimiters" should "be flexible" in {
+    val expected = Sum(CustomDist(Map(1 -> 0.1, 2 -> 0.2)))
+    assertParse("{ 1 : 0.1 , 2 : 0.2 }", expected)
+    assertParse("{1:0.1,2:0.2}", expected)
+  }
 }

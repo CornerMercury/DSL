@@ -16,4 +16,6 @@ object AST {
   
   case class Mul(left: Expr, right: Expr) extends Expr
   case class Div(left: Expr, right: Expr) extends Expr
+  
+  case class CustomDist(dist: Map[Int, Double]) extends Expr
 }
