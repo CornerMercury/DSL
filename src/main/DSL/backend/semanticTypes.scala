@@ -1,40 +1,49 @@
 package DSL.backend
 
-/** Distribution kind for self-optimizing interpretation. Preference order: Scalar > Binomial > Uniform > Generic. */
+/** Distribution kind. Preference order: Scalar > Bernoulli > Binomial > Uniform > Generic. */
 sealed trait DistTy
 
-/** Single outcome with probability 1.0 (e.g. (x: 1.0)). Most preferred. */
+/** Single outcome with probability 1.0. */
 case object ScalarTy extends DistTy
 
-/** Exactly two outcomes (e.g. coin flip, 1d2). */
+/** 
+ * A specific "Two Outcome" distribution where the outcomes are EXACTLY {0, 1}.
+ * This represents a Bernoulli Trial with probability of success 'p'.
+ */
+case class BernoulliTy(p: Double) extends DistTy
+
+/** Any other distribution with exactly two outcomes (e.g. {1, 5}). */
 case object BinomialTy extends DistTy
 
-/** Any number of outcomes, all with equal probability (e.g. 1d6). */
+/** Any number of outcomes, all with equal probability. */
 case object UniformTy extends DistTy
 
-/** Arbitrary discrete distribution. Default/fallback. */
+/** Arbitrary discrete distribution. */
 case object GenericDistTy extends DistTy
 
 object semanticTypes {
 
-  /** Prefer Scalar > Binomial > Uniform > Generic. Classify a computed distribution by its shape. */
   def classify(dist: Map[Int, Double]): DistTy = {
-    if (dist.size == 1) ScalarTy
-    else if (dist.size == 2) BinomialTy
-    else if (dist.isEmpty) GenericDistTy
+    if (dist.size == 1) {
+      ScalarTy
+    } 
+    else if (dist.size == 2) {
+      // Check for Bernoulli: Keys must be exactly 0 and 1
+      if (dist.contains(0) && dist.contains(1)) {
+        BernoulliTy(dist(1)) // Store 'p' (probability of 1)
+      } else {
+        BinomialTy // Generic 2-outcome distribution (e.g. Coin flip 1 or 2)
+      }
+    } 
+    else if (dist.isEmpty) {
+      GenericDistTy
+    } 
     else {
+      // Check for Uniformity
       val probs = dist.values.toSeq
       val p0 = probs.head
       if (probs.forall(p => math.abs(p - p0) < 1e-12)) UniformTy
       else GenericDistTy
     }
-  }
-
-  /** Preference order for merging: Scalar (highest) > Binomial > Uniform > Generic (lowest). */
-  def prefer(left: DistTy, right: DistTy): DistTy = (left, right) match {
-    case (ScalarTy, _) | (_, ScalarTy)       => ScalarTy
-    case (BinomialTy, _) | (_, BinomialTy)   => BinomialTy
-    case (UniformTy, _) | (_, UniformTy)     => UniformTy
-    case _                                    => GenericDistTy
   }
 }

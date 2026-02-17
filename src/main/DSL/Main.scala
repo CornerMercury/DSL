@@ -60,11 +60,10 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
   parser.parse(input) match {
     case Success(ast: Expr) =>
       val optimised = optimiser.optimise(ast).asInstanceOf[Expr]
-      val (dist, tyAst) = interpreter.interpretWithTypes(optimised)
+      val dist = interpreter.interpret(optimised)
       val distLines = dist.toSeq.sortBy(_._1).map { case (v, p) => f"  $v%6d  ${p * 100}%6.2f%%" }
       val distBlock = "Distribution (value → probability):\n" + distLines.mkString("\n")
-      val typeBlock = "Typed AST (distribution kinds: Scalar > Binomial > Uniform > Generic):\n  " + showTy(tyAst)
-      (s"AST: $optimised\n$typeBlock\n$distBlock", ExitCode.Success)
+      (s"AST: $optimised\n$distBlock", ExitCode.Success)
 
     case Success(_) =>
       ("Parse succeeded but root is not an expression", ExitCode.SyntaxErr)
