@@ -38,14 +38,14 @@ private def showTy(e: TyExpr): String = {
     case GenericDistTy => "Generic"
   }
   e match {
-    case TyIntLiteral(n, t)   => s"$n:${tyName(t)}"
-    case TyDice(c, s, t)      => s"dice(${showTy(c)},${showTy(s)}):${tyName(t)}"
-    case TySum(inner, t)      => s"sum(${showTy(inner)}):${tyName(t)}"
-    case TyProd(inner, t)     => s"prod(${showTy(inner)}):${tyName(t)}"
-    case TyAdd(l, r, t)       => s"(${showTy(l)}+${showTy(r)}):${tyName(t)}"
-    case TySub(l, r, t)       => s"(${showTy(l)}-${showTy(r)}):${tyName(t)}"
-    case TyMul(l, r, t)       => s"(${showTy(l)}*${showTy(r)}):${tyName(t)}"
-    case TyDiv(l, r, t)       => s"(${showTy(l)}/${showTy(r)}):${tyName(t)}"
+    case TyIntLiteral(n, t) => s"$n:${tyName(t)}"
+    case TyUnary(UnaryOp.Sum, inner, t)  => s"sum(${showTy(inner)}):${tyName(t)}"
+    case TyUnary(UnaryOp.Prod, inner, t) => s"prod(${showTy(inner)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Dice, c, s, t) => s"dice(${showTy(c)},${showTy(s)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Add, l, r, t)  => s"(${showTy(l)}+${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Sub, l, r, t)  => s"(${showTy(l)}-${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Mul, l, r, t)  => s"(${showTy(l)}*${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Div, l, r, t)  => s"(${showTy(l)}/${showTy(r)}):${tyName(t)}"
   }
 }
 

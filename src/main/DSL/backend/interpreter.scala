@@ -14,107 +14,70 @@ object interpreter {
 
   /** Self-optimizing: interpret and build typed AST (Scalar > Binomial > Uniform > Generic) in one pass. */
   def interpretWithTypes(expr: Expr): (Distribution, TyExpr) = expr match {
-    case Sum(inner) =>
-      val (d, tyInner) = evalSum(inner)
-      (d, TySum(tyInner, classify(d)))
-    case Prod(inner) =>
-      val (d, tyInner) = evalProd(inner)
-      (d, TyProd(tyInner, classify(d)))
+    case Sum(_) | Prod(_) =>
+      evalExpr(expr, DiceMode.Sum) // initial mode is irrelevant; Sum/Prod nodes override it
     case other =>
       throw new IllegalArgumentException(s"Interpreter expects root to be Sum or Prod, got: $other")
   }
 
-  private def evalSum(expr: Expr): (Distribution, TyExpr) = expr match {
-    case IntLiteral(n)     =>
-      val d = Map(n -> 1.0)
-      (d, TyIntLiteral(n, classify(d)))
-    case Dice(c, s)        =>
-      val (dC, tyC) = evalSum(c)
-      val (dS, tyS) = evalSum(s)
-      val d = combineDiceSum(dC, dS)
-      (d, TyDice(tyC, tyS, classify(d)))
-    case Sum(inner)        =>
-      val (d, tyInner) = evalSum(inner)
-      (d, TySum(tyInner, classify(d)))
-    case Prod(inner)       =>
-      val (d, tyInner) = evalProd(inner)
-      (d, TyProd(tyInner, classify(d)))
-    case Add(l, r)         =>
-      val (dL, tyL) = evalSum(l)
-      val (dR, tyR) = evalSum(r)
-      val d = convolve(dL, dR, _ + _)
-      (d, TyAdd(tyL, tyR, classify(d)))
-    case Sub(l, r)         =>
-      val (dL, tyL) = evalSum(l)
-      val (dR, tyR) = evalSum(r)
-      val d = convolveSub(dL, dR)
-      (d, TySub(tyL, tyR, classify(d)))
-    case Mul(l, r)         =>
-      val (dL, tyL) = evalSum(l)
-      val (dR, tyR) = evalSum(r)
-      val d = convolve(dL, dR, _ * _)
-      (d, TyMul(tyL, tyR, classify(d)))
-    case Div(l, r)         =>
-      val (dL, tyL) = evalSum(l)
-      val (dR, tyR) = evalSum(r)
-      val d = convolveDiv(dL, dR)
-      (d, TyDiv(tyL, tyR, classify(d)))
+  private enum DiceMode {
+    case Sum, Prod
   }
 
-  private def evalProd(expr: Expr): (Distribution, TyExpr) = expr match {
-    case IntLiteral(n)     =>
+  private def evalExpr(expr: Expr, mode: DiceMode): (Distribution, TyExpr) = expr match {
+    case IntLiteral(n) =>
       val d = Map(n -> 1.0)
       (d, TyIntLiteral(n, classify(d)))
-    case Dice(c, s)        =>
-      val (dC, tyC) = evalProd(c)
-      val (dS, tyS) = evalProd(s)
-      val d = combineDiceProd(dC, dS)
-      (d, TyDice(tyC, tyS, classify(d)))
-    case Sum(inner)        =>
-      val (d, tyInner) = evalSum(inner)
-      (d, TySum(tyInner, classify(d)))
-    case Prod(inner)       =>
-      val (d, tyInner) = evalProd(inner)
-      (d, TyProd(tyInner, classify(d)))
-    case Add(l, r)         =>
-      val (dL, tyL) = evalProd(l)
-      val (dR, tyR) = evalProd(r)
+
+    case Sum(inner) =>
+      val (d, tyInner) = evalExpr(inner, DiceMode.Sum)
+      (d, TyUnary(UnaryOp.Sum, tyInner, classify(d)))
+
+    case Prod(inner) =>
+      val (d, tyInner) = evalExpr(inner, DiceMode.Prod)
+      (d, TyUnary(UnaryOp.Prod, tyInner, classify(d)))
+
+    case Dice(c, s) =>
+      val (dC, tyC) = evalExpr(c, mode)
+      val (dS, tyS) = evalExpr(s, mode)
+      val d = combineDice(dC, dS, diceDistributionFor(mode))
+      (d, TyBinary(BinaryOp.Dice, tyC, tyS, classify(d)))
+
+    case Add(l, r) =>
+      val (dL, tyL) = evalExpr(l, mode)
+      val (dR, tyR) = evalExpr(r, mode)
       val d = convolve(dL, dR, _ + _)
-      (d, TyAdd(tyL, tyR, classify(d)))
-    case Sub(l, r)         =>
-      val (dL, tyL) = evalProd(l)
-      val (dR, tyR) = evalProd(r)
+      (d, TyBinary(BinaryOp.Add, tyL, tyR, classify(d)))
+
+    case Sub(l, r) =>
+      val (dL, tyL) = evalExpr(l, mode)
+      val (dR, tyR) = evalExpr(r, mode)
       val d = convolveSub(dL, dR)
-      (d, TySub(tyL, tyR, classify(d)))
-    case Mul(l, r)         =>
-      val (dL, tyL) = evalProd(l)
-      val (dR, tyR) = evalProd(r)
+      (d, TyBinary(BinaryOp.Sub, tyL, tyR, classify(d)))
+
+    case Mul(l, r) =>
+      val (dL, tyL) = evalExpr(l, mode)
+      val (dR, tyR) = evalExpr(r, mode)
       val d = convolve(dL, dR, _ * _)
-      (d, TyMul(tyL, tyR, classify(d)))
-    case Div(l, r)         =>
-      val (dL, tyL) = evalProd(l)
-      val (dR, tyR) = evalProd(r)
+      (d, TyBinary(BinaryOp.Mul, tyL, tyR, classify(d)))
+
+    case Div(l, r) =>
+      val (dL, tyL) = evalExpr(l, mode)
+      val (dR, tyR) = evalExpr(r, mode)
       val d = convolveDiv(dL, dR)
-      (d, TyDiv(tyL, tyR, classify(d)))
+      (d, TyBinary(BinaryOp.Div, tyL, tyR, classify(d)))
   }
 
   /** For each (c, s) with prob p_c * p_s, add the distribution of c dice with s sides (sum). */
-  private[backend] def combineDiceSum(countDist: Distribution, sidesDist: Distribution): Distribution = {
+  private[backend] def combineDice(
+      countDist: Distribution,
+      sidesDist: Distribution,
+      diceDist: (Int, Int) => Distribution
+  ): Distribution = {
     var result: Distribution = Map.empty
     for ((c, pC) <- countDist; (s, pS) <- sidesDist) {
       val p = pC * pS
-      val d = diceSumDistribution(safeCount(c), safeSides(s))
-      result = mergeDistributions(result, scaleDistribution(d, p))
-    }
-    result
-  }
-
-  /** For each (c, s) with prob p_c * p_s, add the distribution of product of c dice with s sides. */
-  private[backend] def combineDiceProd(countDist: Distribution, sidesDist: Distribution): Distribution = {
-    var result: Distribution = Map.empty
-    for ((c, pC) <- countDist; (s, pS) <- sidesDist) {
-      val p = pC * pS
-      val d = diceProductDistribution(safeCount(c), safeSides(s))
+      val d = diceDist(safeCount(c), safeSides(s))
       result = mergeDistributions(result, scaleDistribution(d, p))
     }
     result
@@ -124,17 +87,27 @@ object interpreter {
   private[backend] def safeSides(s: Int): Int = if (s < 1) 1 else s
 
   /** Distribution of the sum of `count` dice each with faces 1..sides (uniform). */
-  private[backend] def diceSumDistribution(count: Int, sides: Int): Distribution = {
-    if (count <= 0) return Map(0 -> 1.0)
-    val oneDie = (1 to sides).map(_ -> (1.0 / sides)).toMap
-    (1 until count).foldLeft(oneDie) { (acc, _) => convolve(acc, oneDie, _ + _) }
-  }
+  private[backend] def diceSumDistribution(count: Int, sides: Int): Distribution =
+    diceDistribution(count, sides, zero = 0, _ + _)
 
   /** Distribution of the product of `count` dice each with faces 1..sides (uniform). */
-  private[backend] def diceProductDistribution(count: Int, sides: Int): Distribution = {
-    if (count <= 0) return Map(1 -> 1.0)
-    val oneDie = (1 to sides).map(_ -> (1.0 / sides)).toMap
-    (1 until count).foldLeft(oneDie) { (acc, _) => convolve(acc, oneDie, _ * _) }
+  private[backend] def diceProductDistribution(count: Int, sides: Int): Distribution =
+    diceDistribution(count, sides, zero = 1, _ * _)
+
+  private def diceDistribution(
+      count: Int,
+      sides: Int,
+      zero: Int,
+      combine: (Int, Int) => Int
+  ): Distribution = {
+    if (count <= 0) return Map(zero -> 1.0)
+    val oneDie = (1 to sides).iterator.map(_ -> (1.0 / sides)).toMap
+    (1 until count).foldLeft(oneDie) { (acc, _) => convolve(acc, oneDie, combine) }
+  }
+
+  private def diceDistributionFor(mode: DiceMode): (Int, Int) => Distribution = mode match {
+    case DiceMode.Sum  => diceSumDistribution
+    case DiceMode.Prod => diceProductDistribution
   }
 
   /** Convolve two distributions with combination function f(v1, v2). */

@@ -8,19 +8,19 @@ object typedAST {
     def ty: DistTy
   }
 
+  enum UnaryOp {
+    case Sum, Prod
+  }
+
+  enum BinaryOp {
+    case Dice, Add, Sub, Mul, Div
+  }
+
   case class TyIntLiteral(value: Int, ty: DistTy) extends TyExpr
 
-  case class TyDice(count: TyExpr, sides: TyExpr, ty: DistTy) extends TyExpr
+  /** Unary wrapper nodes like `sum(e)` or `prod(e)`. */
+  case class TyUnary(op: UnaryOp, inner: TyExpr, ty: DistTy) extends TyExpr
 
-  case class TySum(inner: TyExpr, ty: DistTy) extends TyExpr
-
-  case class TyProd(inner: TyExpr, ty: DistTy) extends TyExpr
-
-  case class TyAdd(left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
-
-  case class TySub(left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
-
-  case class TyMul(left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
-
-  case class TyDiv(left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
+  /** Binary nodes like `e1 + e2`, `e1 / e2`, or `dice(count, sides)`. */
+  case class TyBinary(op: BinaryOp, left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
 }
