@@ -5,6 +5,8 @@ import typedAST._
 
 object interpreter {
 
+  private type Env = Map[String, Distribution]
+
   /** Backwards-compatible entry point: type-check, then interpret. */
   def interpret(expr: Expr): Distribution =
     interpret(expr, DefaultDistributionSemantics)
@@ -15,6 +17,26 @@ object interpreter {
       interpretTyped(typed, sem)
     case other =>
       throw new IllegalArgumentException(s"Root must be Sum or Prod. Got: $other")
+  }
+
+  /** Interpret a full program with assignments and expression statements. */
+  def interpretProgram(program: Program): Distribution =
+    interpretProgram(program, DefaultDistributionSemantics)
+
+  def interpretProgram(program: Program, sem: DistributionSemantics): Distribution = {
+    val (env, maybeResult) = program.stmts.foldLeft((Map.empty[String, Distribution]: Env, Option.empty[Distribution])) {
+      case ((envAcc, _), Assign(name, expr)) =>
+        val value = evalExprWithEnv(expr, DiceMode.Sum, sem, envAcc)
+        (envAcc.updated(name, value), None)
+
+      case ((envAcc, _), ExprStmt(expr)) =>
+        val value = evalExprWithEnv(expr, DiceMode.Sum, sem, envAcc)
+        (envAcc, Some(value))
+    }
+
+    maybeResult.getOrElse {
+      throw new IllegalArgumentException("Program contains no expression statements to evaluate.")
+    }
   }
 
   /** Interpret an already-typed AST. */
@@ -28,42 +50,58 @@ object interpreter {
       throw new IllegalArgumentException(s"Root must be sum or prod. Got: $other")
   }
 
-  private def eval(expr: TyExpr, mode: DiceMode, sem: DistributionSemantics): Distribution = expr match {
+  /** Helper to interpret an expression given an environment of variable bindings. */
+  private def evalExprWithEnv(expr: Expr, defaultMode: DiceMode, sem: DistributionSemantics, env: Env): Distribution = {
+    val typed = typer.annotate(expr)
+    typed match {
+      case TyUnary(UnaryOp.Sum, inner, _)  => eval(inner, DiceMode.Sum, sem, env)
+      case TyUnary(UnaryOp.Prod, inner, _) => eval(inner, DiceMode.Prod, sem, env)
+      case other                           => eval(other, defaultMode, sem, env)
+    }
+  }
+
+  private def eval(expr: TyExpr, mode: DiceMode, sem: DistributionSemantics): Distribution =
+    eval(expr, mode, sem, Map.empty)
+
+  private def eval(expr: TyExpr, mode: DiceMode, sem: DistributionSemantics, env: Env): Distribution = expr match {
     case TyIntLiteral(n, _) =>
       sem.scalar(n)
+
+    case TyIdent(name, _) =>
+      env.getOrElse(name, throw new IllegalArgumentException(s"Unbound identifier: $name"))
 
     case TyCustomDist(raw, _) =>
       sem.custom(raw)
 
     case TyUnary(UnaryOp.Sum, inner, _) =>
-      eval(inner, DiceMode.Sum, sem)
+      eval(inner, DiceMode.Sum, sem, env)
 
     case TyUnary(UnaryOp.Prod, inner, _) =>
-      eval(inner, DiceMode.Prod, sem)
+      eval(inner, DiceMode.Prod, sem, env)
 
     case TyBinary(BinaryOp.Dice, c, s, _) =>
-      val dC = eval(c, mode, sem)
-      val dS = eval(s, mode, sem)
+      val dC = eval(c, mode, sem, env)
+      val dS = eval(s, mode, sem, env)
       sem.dice(dC, dS, mode)
 
     case TyBinary(BinaryOp.Add, l, r, _) =>
-      val dL = eval(l, mode, sem)
-      val dR = eval(r, mode, sem)
+      val dL = eval(l, mode, sem, env)
+      val dR = eval(r, mode, sem, env)
       sem.add(dL, dR)
 
     case TyBinary(BinaryOp.Sub, l, r, _) =>
-      val dL = eval(l, mode, sem)
-      val dR = eval(r, mode, sem)
+      val dL = eval(l, mode, sem, env)
+      val dR = eval(r, mode, sem, env)
       sem.sub(dL, dR)
 
     case TyBinary(BinaryOp.Mul, l, r, _) =>
-      val dL = eval(l, mode, sem)
-      val dR = eval(r, mode, sem)
+      val dL = eval(l, mode, sem, env)
+      val dR = eval(r, mode, sem, env)
       sem.mul(dL, dR)
 
     case TyBinary(BinaryOp.Div, l, r, _) =>
-      val dL = eval(l, mode, sem)
-      val dR = eval(r, mode, sem)
+      val dL = eval(l, mode, sem, env)
+      val dR = eval(r, mode, sem, env)
       sem.div(dL, dR)
   }
 }

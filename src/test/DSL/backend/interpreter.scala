@@ -21,6 +21,43 @@ class InterpreterSpec extends AnyFlatSpec {
     err.getMessage should include("Sum or Prod")
   }
 
+  "Interpreter with variables" should "evaluate assignments and identifier references" in {
+    val prog = Program(
+      List(
+        Assign("x", IntLiteral(1)),
+        ExprStmt(Sum(Add(Ident("x"), IntLiteral(2))))
+      )
+    )
+
+    val d = interpreter.interpretProgram(prog)
+    d shouldEqual Map(3 -> 1.0)
+  }
+
+  it should "support dice and multiple assignments" in {
+    val prog = Program(
+      List(
+        Assign("x", Dice(IntLiteral(1), IntLiteral(6))),
+        Assign("y", IntLiteral(5)),
+        ExprStmt(Sum(Add(Ident("x"), Ident("y"))))
+      )
+    )
+
+    val d = interpreter.interpretProgram(prog)
+    d.keySet shouldEqual (6 to 11).toSet
+    d.values.sum shouldBe 1.0 +- 1e-9
+  }
+
+  it should "fail on use of unbound identifiers" in {
+    val prog = Program(
+      List(
+        ExprStmt(Sum(Ident("x")))
+      )
+    )
+
+    val err = the[IllegalArgumentException] thrownBy interpreter.interpretProgram(prog)
+    err.getMessage should include("Unbound identifier")
+  }
+
   "Sum" should "interpret IntLiteral as point mass" in {
     assertDist(Sum(IntLiteral(5)))(5 -> 1.0)
   }

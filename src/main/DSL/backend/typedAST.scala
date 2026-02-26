@@ -13,6 +13,7 @@ object typedAST {
   enum BinaryOp { case Dice, Add, Sub, Mul, Div }
 
   case class TyIntLiteral(value: Int, ty: DistTy) extends TyExpr
+  case class TyIdent(name: String, ty: DistTy) extends TyExpr
   
   case class TyCustomDist(dist: Map[Int, Double], ty: DistTy) extends TyExpr
 

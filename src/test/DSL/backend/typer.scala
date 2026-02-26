@@ -20,6 +20,17 @@ class TyperSpec extends AnyFlatSpec {
     }
   }
 
+  it should "annotate identifiers as UnknownTy" in {
+    val t = typer.annotate(Ident("x"))
+    t match {
+      case TyIdent(name, ty) =>
+        name shouldBe "x"
+        ty shouldBe UnknownTy
+      case other =>
+        fail(s"Expected TyIdent with UnknownTy, got $other")
+    }
+  }
+
   it should "annotate CustomDist using semantic classification" in {
     val bernExpr = CustomDist(Map(0 -> 0.9, 1 -> 0.1))
     val bernTyped = typer.annotate(bernExpr)

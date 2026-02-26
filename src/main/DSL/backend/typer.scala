@@ -11,6 +11,11 @@ object typer {
     infer(expr)
 
   private def infer(expr: Expr): TyExpr = expr match {
+    case Ident(name) =>
+      // Variables are currently treated as unknown distributions at type-check time.
+      // Their concrete distributions are supplied at runtime by the interpreter.
+      TyIdent(name, UnknownTy)
+
     case IntLiteral(n) =>
       TyIntLiteral(n, ScalarTy)
 

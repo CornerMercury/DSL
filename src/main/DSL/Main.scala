@@ -4,7 +4,7 @@ import java.io.File
 import scala.io.Source
 import parsley.{Success, Failure}
 import DSL.frontend.parser
-import DSL.frontend.AST.Expr
+import DSL.frontend.AST._
 import DSL.backend.optimiser
 import DSL.backend.interpreter
 import DSL.backend.typedAST._
@@ -58,6 +58,13 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
 
   // Pipeline: parse -> optimise -> typing & interpreting (single pass)
   parser.parse(input) match {
+    case Success(p: Program) =>
+      val optimised = optimiser.optimise(p).asInstanceOf[Program]
+      val dist = interpreter.interpretProgram(optimised)
+      val distLines = dist.toSeq.sortBy(_._1).map { case (v, p) => f"  $v%6d  ${p * 100}%6.2f%%" }
+      val distBlock = "Distribution (value → probability):\n" + distLines.mkString("\n")
+      (s"AST: $optimised\n$distBlock", ExitCode.Success)
+
     case Success(ast: Expr) =>
       val optimised = optimiser.optimise(ast).asInstanceOf[Expr]
       val dist = interpreter.interpret(optimised)
