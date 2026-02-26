@@ -10,57 +10,62 @@ object interpreter {
 
   enum DiceMode { case Sum, Prod }
 
+  /** Backwards-compatible entry point: type-check, then interpret. */
   def interpret(expr: Expr): Distribution = expr match {
-    case Sum(inner)  => eval(inner, DiceMode.Sum)._1
-    case Prod(inner) => eval(inner, DiceMode.Prod)._1
-    case other       => throw new IllegalArgumentException(s"Root must be Sum or Prod. Got: $other")
+    case Sum(_) | Prod(_) =>
+      val typed = typer.annotate(expr)
+      interpret(typed)
+    case other =>
+      throw new IllegalArgumentException(s"Root must be Sum or Prod. Got: $other")
   }
 
-  private def eval(expr: Expr, mode: DiceMode): (Distribution, TyExpr) = expr match {
-    case IntLiteral(n) =>
-      val d = MathOps.scalar(n)
-      (d, TyIntLiteral(n, classify(d)))
+  /** Interpret an already-typed AST. */
+  def interpret(expr: TyExpr): Distribution = expr match {
+    case TyUnary(UnaryOp.Sum, inner, _)  => eval(inner, DiceMode.Sum)
+    case TyUnary(UnaryOp.Prod, inner, _) => eval(inner, DiceMode.Prod)
+    case other =>
+      throw new IllegalArgumentException(s"Root must be sum or prod. Got: $other")
+  }
 
-    case Sum(inner) =>
-      val (d, t) = eval(inner, DiceMode.Sum)
-      (d, TyUnary(UnaryOp.Sum, t, classify(d)))
+  private def eval(expr: TyExpr, mode: DiceMode): Distribution = expr match {
+    case TyIntLiteral(n, _) =>
+      MathOps.scalar(n)
 
-    case Prod(inner) =>
-      val (d, t) = eval(inner, DiceMode.Prod)
-      (d, TyUnary(UnaryOp.Prod, t, classify(d)))
-
-    case Dice(c, s) =>
-      val (dC, tC) = eval(c, mode)
-      val (dS, tS) = eval(s, mode)
-      val d = SmartConstructors.dice(dC, dS, mode)
-      (d, TyBinary(BinaryOp.Dice, tC, tS, classify(d)))
-
-    case CustomDist(raw) =>
+    case TyCustomDist(raw, _) =>
       // Normalize probabilities to ensure they sum to 1.0
       val total = raw.values.sum
-      val d = if (total == 0) Map(0 -> 1.0) else raw.view.mapValues(_ / total).toMap
-      (d, TyCustomDist(d, classify(d)))
+      if (total == 0) Map(0 -> 1.0) else raw.view.mapValues(_ / total).toMap
 
-    case Add(l, r) =>
-      val (dL, tL) = eval(l, mode)
-      val (dR, tR) = eval(r, mode)
-      val d = SmartConstructors.add(dL, dR)
-      (d, TyBinary(BinaryOp.Add, tL, tR, classify(d)))
+    case TyUnary(UnaryOp.Sum, inner, _) =>
+      eval(inner, DiceMode.Sum)
 
-    case Sub(l, r) =>
-      val ((dL, tL), (dR, tR)) = (eval(l, mode), eval(r, mode))
-      val d = MathOps.convolve(dL, dR, _ - _)
-      (d, TyBinary(BinaryOp.Sub, tL, tR, classify(d)))
+    case TyUnary(UnaryOp.Prod, inner, _) =>
+      eval(inner, DiceMode.Prod)
 
-    case Mul(l, r) =>
-      val ((dL, tL), (dR, tR)) = (eval(l, mode), eval(r, mode))
-      val d = MathOps.convolve(dL, dR, _ * _)
-      (d, TyBinary(BinaryOp.Mul, tL, tR, classify(d)))
+    case TyBinary(BinaryOp.Dice, c, s, _) =>
+      val dC = eval(c, mode)
+      val dS = eval(s, mode)
+      SmartConstructors.dice(dC, dS, mode)
 
-    case Div(l, r) =>
-      val ((dL, tL), (dR, tR)) = (eval(l, mode), eval(r, mode))
-      val d = MathOps.convolveDiv(dL, dR)
-      (d, TyBinary(BinaryOp.Div, tL, tR, classify(d)))
+    case TyBinary(BinaryOp.Add, l, r, _) =>
+      val dL = eval(l, mode)
+      val dR = eval(r, mode)
+      SmartConstructors.add(dL, dR)
+
+    case TyBinary(BinaryOp.Sub, l, r, _) =>
+      val dL = eval(l, mode)
+      val dR = eval(r, mode)
+      MathOps.convolve(dL, dR, _ - _)
+
+    case TyBinary(BinaryOp.Mul, l, r, _) =>
+      val dL = eval(l, mode)
+      val dR = eval(r, mode)
+      MathOps.convolve(dL, dR, _ * _)
+
+    case TyBinary(BinaryOp.Div, l, r, _) =>
+      val dL = eval(l, mode)
+      val dR = eval(r, mode)
+      MathOps.convolveDiv(dL, dR)
   }
 }
 

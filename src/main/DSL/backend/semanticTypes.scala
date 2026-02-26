@@ -1,7 +1,10 @@
 package DSL.backend
 
-/** Distribution kind. Preference order: Scalar > Bernoulli > Binomial > Uniform > Generic. */
+/** Distribution kind. Preference order: Scalar > Bernoulli > Binomial > Uniform > Generic > Unknown. */
 sealed trait DistTy
+
+/** Type is not (yet) known – reserved for future inputs/variables. */
+case object UnknownTy extends DistTy
 
 /** Single outcome with probability 1.0. */
 case object ScalarTy extends DistTy
