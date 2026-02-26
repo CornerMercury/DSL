@@ -34,6 +34,8 @@ object lexer {
 
     val sumKeyword = lexer.lexeme(string("sum"))
     val prodKeyword = lexer.lexeme(string("prod"))
+    
+    val identifier: Parsley[String] = lexer.lexeme.names.identifier
 
     val implicits = lexer.lexeme.symbol.implicits
     

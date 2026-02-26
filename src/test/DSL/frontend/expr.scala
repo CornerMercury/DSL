@@ -16,7 +16,7 @@ class DiceParserSpec extends AnyFlatSpec {
    *    If not, prints "Expected X but got Y".
    * 3. If Failed: Fails the test and prints the Parsley error message.
    */
-  def assertParse(input: String, expected: Expr): Unit = {
+  def assertParse(input: String, expected: AstNode): Unit = {
     parser.parse(input) match {
       case Success(actual) => 
         // shouldBe checks equality and prints a nice diff on failure
@@ -156,5 +156,31 @@ class DiceParserSpec extends AnyFlatSpec {
     val expected = Sum(CustomDist(Map(1 -> 0.1, 2 -> 0.2)))
     assertParse("{ 1 : 0.1 , 2 : 0.2 }", expected)
     assertParse("{1:0.1,2:0.2}", expected)
+  }
+
+  "Identifiers" should "parse as identifier references" in {
+    assertParse("x", Sum(Ident("x")))
+    assertParse("foo_bar123", Sum(Ident("foo_bar123")))
+  }
+
+  "Assignments" should "parse a simple program with a final expression" in {
+    val expected: AstNode = Program(
+      List(
+        Assign("x", IntLiteral(1)),
+        ExprStmt(Sum(Add(Ident("x"), IntLiteral(2))))
+      )
+    )
+    assertParse("x = 1; x + 2", expected)
+  }
+
+  it should "parse multiple assignments before the final expression" in {
+    val expected: AstNode = Program(
+      List(
+        Assign("x", Dice(IntLiteral(1), IntLiteral(6))),
+        Assign("y", IntLiteral(5)),
+        ExprStmt(Sum(Add(Ident("x"), Ident("y"))))
+      ),
+    )
+    assertParse("x = d6; y = 5; x + y", expected)
   }
 }
