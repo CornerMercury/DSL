@@ -60,9 +60,12 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
   parser.parse(input) match {
     case Success(p: Program) =>
       val optimised = optimiser.optimise(p).asInstanceOf[Program]
-      val dist = interpreter.interpretProgram(optimised)
-      val distLines = dist.toSeq.sortBy(_._1).map { case (v, p) => f"  $v%6d  ${p * 100}%6.2f%%" }
-      val distBlock = "Distribution (value → probability):\n" + distLines.mkString("\n")
+      val dists = interpreter.interpretProgram(optimised)
+      val blocks = dists.zipWithIndex.map { case (dist, idx) =>
+        val distLines = dist.toSeq.sortBy(_._1).map { case (v, p) => f"  $v%6d  ${p * 100}%6.2f%%" }
+        s"Result ${idx + 1}:\n" + distLines.mkString("\n")
+      }
+      val distBlock = "Distributions (value → probability):\n" + blocks.mkString("\n\n")
       (s"AST: $optimised\n$distBlock", ExitCode.Success)
 
     case Success(ast: Expr) =>

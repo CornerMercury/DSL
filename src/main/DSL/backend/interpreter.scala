@@ -19,24 +19,25 @@ object interpreter {
       throw new IllegalArgumentException(s"Root must be Sum or Prod. Got: $other")
   }
 
-  /** Interpret a full program with assignments and expression statements. */
-  def interpretProgram(program: Program): Distribution =
+  /** Interpret a full program with assignments and expression statements.
+    * Returns a list of distributions, one per expression statement in order.
+    */
+  def interpretProgram(program: Program): List[Distribution] =
     interpretProgram(program, DefaultDistributionSemantics)
 
-  def interpretProgram(program: Program, sem: DistributionSemantics): Distribution = {
-    val (env, maybeResult) = program.stmts.foldLeft((Map.empty[String, Distribution]: Env, Option.empty[Distribution])) {
-      case ((envAcc, _), Assign(name, expr)) =>
+  def interpretProgram(program: Program, sem: DistributionSemantics): List[Distribution] = {
+    val (_, results) = program.stmts.foldLeft((Map.empty[String, Distribution]: Env, List.empty[Distribution])) {
+      case ((envAcc, outs), Assign(name, expr)) =>
         val value = evalExprWithEnv(expr, DiceMode.Sum, sem, envAcc)
-        (envAcc.updated(name, value), None)
+        (envAcc.updated(name, value), outs)
 
-      case ((envAcc, _), ExprStmt(expr)) =>
+      case ((envAcc, outs), ExprStmt(expr)) =>
         val value = evalExprWithEnv(expr, DiceMode.Sum, sem, envAcc)
-        (envAcc, Some(value))
+        (envAcc, outs :+ value)
     }
 
-    maybeResult.getOrElse {
-      throw new IllegalArgumentException("Program contains no expression statements to evaluate.")
-    }
+    if results.nonEmpty then results
+    else throw new IllegalArgumentException("Program contains no expression statements to evaluate.")
   }
 
   /** Interpret an already-typed AST. */

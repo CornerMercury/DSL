@@ -29,8 +29,9 @@ class InterpreterSpec extends AnyFlatSpec {
       )
     )
 
-    val d = interpreter.interpretProgram(prog)
-    d shouldEqual Map(3 -> 1.0)
+    val dists = interpreter.interpretProgram(prog)
+    dists should have length 1
+    dists.head shouldEqual Map(3 -> 1.0)
   }
 
   it should "support dice and multiple assignments" in {
@@ -42,9 +43,25 @@ class InterpreterSpec extends AnyFlatSpec {
       )
     )
 
-    val d = interpreter.interpretProgram(prog)
+    val dists = interpreter.interpretProgram(prog)
+    dists should have length 1
+    val d = dists.head
     d.keySet shouldEqual (6 to 11).toSet
     d.values.sum shouldBe 1.0 +- 1e-9
+  }
+
+  it should "produce one distribution per expression statement" in {
+    val prog = Program(
+      List(
+        ExprStmt(Sum(IntLiteral(1))),
+        ExprStmt(Sum(IntLiteral(2)))
+      )
+    )
+
+    val dists = interpreter.interpretProgram(prog)
+    dists should have length 2
+    dists(0) shouldEqual Map(1 -> 1.0)
+    dists(1) shouldEqual Map(2 -> 1.0)
   }
 
   it should "fail on use of unbound identifiers" in {
