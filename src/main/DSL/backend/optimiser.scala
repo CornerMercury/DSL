@@ -3,49 +3,154 @@ package DSL.backend
 import DSL.frontend.AST._
 
 object optimiser {
-  def optimise(node: AstNode): AstNode = node match {
-    case e: Expr => optimiseExpr(e)
-    case other   => other
+
+  def optimise(program: Program): Program = program match {
+    case Program(stmts) => Program(optimiseBlock(stmts))
   }
 
-  private def optimiseExpr(node: Expr): Expr = node match {
-    case Add(l, r) => foldAdd(optimiseExpr(l), optimiseExpr(r))
-    case Sub(l, r) => foldSub(optimiseExpr(l), optimiseExpr(r))
-    case Mul(l, r) => foldMul(optimiseExpr(l), optimiseExpr(r))
-    case Div(l, r) => foldDiv(optimiseExpr(l), optimiseExpr(r))
+  /**
+   * Optimises a list of statements.
+   */
+  private def optimiseBlock(stmts: List[Stmt]): List[Stmt] = {
+    // Pass 1: Constant Propagation + Unreachable Code Removal (after Return)
+    val propagated = propagateConstants(stmts)
     
-    case Dice(c, s) => Dice(optimiseExpr(c), optimiseExpr(s))
-    case Sum(inner) => Sum(optimiseExpr(inner))
-    case Prod(inner) => Prod(optimiseExpr(inner))
-
-    case other => other
+    // Pass 2: Dead Store Elimination
+    eliminateDeadStores(propagated)
   }
 
-  private def foldAdd(l: Expr, r: Expr): Expr = (l, r) match {
+  // ==========================================
+  // PASS 1: Constant Propagation & Unreachable Code Removal
+  // ==========================================
+
+  private def propagateConstants(stmts: List[Stmt]): List[Stmt] = {
+    // Accumulator: (Accumulated Statements, Environment, HasReturnedFlag)
+    val (finalStmts, _, _) = stmts.foldLeft((List.empty[Stmt], Map.empty[String, Expr], false)) {
+      
+      // If we have already hit a return statement, skip everything else (Dead Code)
+      case ((acc, env, true), _) => 
+        (acc, env, true)
+
+      // Otherwise, process the statement
+      case ((acc, env, false), stmt) => stmt match {
+        
+        case Assign(name, expr) =>
+          val optimizedRHS = optimiseExpr(expr, env)
+          
+          val newEnv = optimizedRHS match {
+            case l: IntLiteral => env + (name -> l)
+            case _             => env - name
+          }
+          (acc :+ Assign(name, optimizedRHS), newEnv, false)
+
+        case ExprStmt(expr) =>
+          (acc :+ ExprStmt(optimiseExpr(expr, env)), env, false)
+
+        case Return(expr) =>
+          // Optimize the return value
+          val optReturn = Return(optimiseExpr(expr, env))
+          // Add to list, AND set hasReturned = true
+          (acc :+ optReturn, env, true)
+
+        case Func(name, params, body) =>
+          val optimizedBody = optimiseBlock(body)
+          (acc :+ Func(name, params, optimizedBody), env, false)
+      }
+    }
+    finalStmts
+  }
+
+  /**
+   * Recursively simplifies an expression.
+   */
+  private def optimiseExpr(node: Expr, env: Map[String, Expr]): Expr = node match {
+    case Ident(name) => env.getOrElse(name, node)
+
+    case Add(l, r) => foldAdd(optimiseExpr(l, env), optimiseExpr(r, env))
+    case Sub(l, r) => foldSub(optimiseExpr(l, env), optimiseExpr(r, env))
+    case Mul(l, r) => foldMul(optimiseExpr(l, env), optimiseExpr(r, env))
+    case Div(l, r) => foldDiv(optimiseExpr(l, env), optimiseExpr(r, env))
+
+    case Dice(c, s)  => Dice(optimiseExpr(c, env), optimiseExpr(s, env))
+    case Sum(inner)  => Sum(optimiseExpr(inner, env))
+    case Prod(inner) => Prod(optimiseExpr(inner, env))
+    case CustomDist(d) => CustomDist(d)
+
+    case i: IntLiteral => i
+  }
+
+  // ==========================================
+  // Folding Logic
+  // ==========================================
+
+  private def foldAdd(left: Expr, right: Expr): Expr = (left, right) match {
     case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a + b)
     case (x, IntLiteral(0)) => x
     case (IntLiteral(0), x) => x
-    case _ => Add(l, r)
+    case _ => Add(left, right)
   }
 
-  private def foldSub(l: Expr, r: Expr): Expr = (l, r) match {
+  private def foldSub(left: Expr, right: Expr): Expr = (left, right) match {
     case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a - b)
     case (x, IntLiteral(0)) => x
-    case _ => Sub(l, r)
+    case _ => Sub(left, right)
   }
 
-  private def foldMul(l: Expr, r: Expr): Expr = (l, r) match {
+  private def foldMul(left: Expr, right: Expr): Expr = (left, right) match {
     case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a * b)
     case (_, IntLiteral(0)) => IntLiteral(0)
     case (IntLiteral(0), _) => IntLiteral(0)
     case (x, IntLiteral(1)) => x
     case (IntLiteral(1), x) => x
-    case _ => Mul(l, r)
+    case _ => Mul(left, right)
   }
 
-  private def foldDiv(l: Expr, r: Expr): Expr = (l, r) match {
+  private def foldDiv(left: Expr, right: Expr): Expr = (left, right) match {
     case (IntLiteral(a), IntLiteral(b)) if b != 0 => IntLiteral(a / b)
     case (x, IntLiteral(1)) => x
-    case _ => Div(l, r)
+    case _ => Div(left, right)
+  }
+
+  // ==========================================
+  // PASS 2: Dead Store Elimination
+  // ==========================================
+
+  private def eliminateDeadStores(stmts: List[Stmt]): List[Stmt] = {
+    // Traverse backwards
+    val (reversedOptimized, _) = stmts.reverse.foldLeft((List.empty[Stmt], Set.empty[String])) {
+      case ((acc, liveVars), stmt) => stmt match {
+        
+        case Assign(name, expr) =>
+          if (liveVars.contains(name)) {
+            val newLive = (liveVars - name) ++ getUsedVars(expr)
+            (stmt :: acc, newLive)
+          } else {
+            // Dead store
+            (acc, liveVars)
+          }
+
+        case ExprStmt(expr) =>
+          (stmt :: acc, liveVars ++ getUsedVars(expr))
+
+        case Return(expr) =>
+          (stmt :: acc, liveVars ++ getUsedVars(expr))
+
+        case f: Func =>
+          (f :: acc, liveVars)
+      }
+    }
+    reversedOptimized
+  }
+
+  private def getUsedVars(expr: Expr): Set[String] = expr match {
+    case Ident(name) => Set(name)
+    case Add(l, r)   => getUsedVars(l) ++ getUsedVars(r)
+    case Sub(l, r)   => getUsedVars(l) ++ getUsedVars(r)
+    case Mul(l, r)   => getUsedVars(l) ++ getUsedVars(r)
+    case Div(l, r)   => getUsedVars(l) ++ getUsedVars(r)
+    case Dice(c, s)  => getUsedVars(c) ++ getUsedVars(s)
+    case Sum(i)      => getUsedVars(i)
+    case Prod(i)     => getUsedVars(i)
+    case _           => Set.empty
   }
 }

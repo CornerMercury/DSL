@@ -13,10 +13,12 @@ import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodK
 import DSL.frontend.AST._
 
 object parser {
-  def parse[Err: ErrorBuilder](input: String): Result[String, AstNode] = {
+  // Changed return type from AstNode to Program to be strict
+  def parse[Err: ErrorBuilder](input: String): Result[String, Program] = {
+    // Cast is safe because 'program' parser now strictly returns Program
     parser.parse(input) match {
-      case p @ Success(_) => p
-      case Failure(msg)   => Failure(msg.toString)
+      case Success(p)   => Success(p)
+      case Failure(msg) => Failure(msg.toString)
     }
   }
 
@@ -25,20 +27,16 @@ object parser {
     case _                => Sum(e)
   }
 
-  private lazy val parser: Parsley[AstNode] = fully(program)
+  // Ensure the root parser returns a Program
+  private lazy val parser: Parsley[Program] = fully(program)
 
   /** Program: one or more statements. */
-  private lazy val program: Parsley[AstNode] =
-    sepEndBy1(stmt, ";").map {
-      case List(ExprStmt(e)) => e // Backward compatibility for single expressions
-      case ss                => Program(ss)
-    }
+  private lazy val program: Parsley[Program] =
+    sepEndBy1(stmt, ";").map(Program.apply)
 
   private lazy val stmt: Parsley[Stmt] =
     assignStmt <|> returnStmt <|> funcDecl <|> exprStmt
 
-  // Use atomic on the left side to backtrack if it's not an assignment (e.g. "x + 1")
-  // Commits to assignment once '=' is parsed.
   private lazy val assignStmt: Parsley[Assign] =
     (atomic(identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
 
@@ -59,7 +57,6 @@ object parser {
   
   private val diceOp = char('d')
 
-  // 'd' as infix operator has highest precedence in term (binds tighter than mul/div)
   private lazy val term: Parsley[Expr] = precedence[Expr](atom)(
     Ops(InfixL)(diceOp #> Dice.apply),
     Ops(InfixL)("*" #> Mul.apply, "/" #> Div.apply)
@@ -74,8 +71,6 @@ object parser {
 
   /** Atoms */
 
-  // atomic(prefixDice) before identRef so "d6" is dice not ident; atomic(sumCall/prodCall)
-  // so "sum"/"prod" don't consume a leading identifier (e.g. "s" in "return s") then fail.
   private lazy val atom: Parsley[Expr] = 
     literal <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> atomic(prefixDice) <|> identRef <|> parens
 
