@@ -9,7 +9,7 @@ import parsley.combinator.{sepBy, sepEndBy1}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword}
+import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, funcKeyword, returnKeyword}
 import DSL.frontend.AST._
 
 object parser {
@@ -35,12 +35,22 @@ object parser {
     }
 
   private lazy val stmt: Parsley[Stmt] =
-    assignStmt <|> exprStmt
+    assignStmt <|> returnStmt <|> funcDecl <|> exprStmt
 
   // Use atomic on the left side to backtrack if it's not an assignment (e.g. "x + 1")
   // Commits to assignment once '=' is parsed.
   private lazy val assignStmt: Parsley[Assign] =
     (atomic(identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
+
+  private lazy val returnStmt: Parsley[Return] =
+    (returnKeyword ~> expr).map(Return.apply)
+
+  private lazy val funcDecl: Parsley[Func] =
+    atomic(funcKeyword ~> identifier <~ "(").flatMap { name =>
+      (sepBy(identifier, ",") <~ ")" <~ "{" <~> (sepEndBy1(stmt, ";") <~ "}")).map { case (params, body) =>
+        Func(name, params, body)
+      }
+    }
 
   private lazy val exprStmt: Parsley[ExprStmt] =
     expr.map(e => ExprStmt(wrapInSumIfNeeded(e)))
@@ -64,12 +74,10 @@ object parser {
 
   /** Atoms */
 
-  // KEY FIX: atomic(prefixDice) must be checked BEFORE identRef.
-  // 'd' is a valid start for an identifier, so identRef would greedily consume "d6".
-  // atomic ensures that if prefixDice starts matching 'd' but fails on the following atom,
-  // it backtracks to let identRef try.
+  // atomic(prefixDice) before identRef so "d6" is dice not ident; atomic(sumCall/prodCall)
+  // so "sum"/"prod" don't consume a leading identifier (e.g. "s" in "return s") then fail.
   private lazy val atom: Parsley[Expr] = 
-    literal <|> customDistLiteral <|> sumCall <|> prodCall <|> atomic(prefixDice) <|> identRef <|> parens
+    literal <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> atomic(prefixDice) <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = {
     integer.map(n => IntLiteral(n))

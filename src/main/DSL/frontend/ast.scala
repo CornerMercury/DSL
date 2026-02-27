@@ -14,8 +14,14 @@ object AST {
 
   /** Expression statement: evaluate + (for now) print. */
   case class ExprStmt(expr: Expr) extends Stmt
+
+  /** Return statement (valid inside function body). */
+  case class Return(expr: Expr) extends Stmt
+
+  /** Function declaration: func name(arg1, arg2, ...) { stmt; ...; return ... } */
+  case class Func(name: String, params: List[String], body: List[Stmt]) extends Stmt
   
-  /** A program is a list of statements (assignments and/or expressions). */
+  /** A program is a list of statements (assignments, expressions, function declarations). */
   case class Program(stmts: List[Stmt]) extends AstNode
 
   case class IntLiteral(value: Int) extends Expr

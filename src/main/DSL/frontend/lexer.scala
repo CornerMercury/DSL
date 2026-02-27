@@ -15,7 +15,7 @@ object lexer {
             identifierLetter = Basic(c => Character.isLetterOrDigit(c) || c == '_'),
         ),
         
-        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod")),
+        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod", "func", "return")),
 
         NumericDesc.plain.copy(
             integerNumbersCanBeHexadecimal = false,
@@ -34,7 +34,9 @@ object lexer {
 
     val sumKeyword = lexer.lexeme(string("sum"))
     val prodKeyword = lexer.lexeme(string("prod"))
-    
+    val funcKeyword = lexer.lexeme(string("func"))
+    val returnKeyword = lexer.lexeme(string("return"))
+
     val identifier: Parsley[String] = lexer.lexeme.names.identifier
 
     val implicits = lexer.lexeme.symbol.implicits
