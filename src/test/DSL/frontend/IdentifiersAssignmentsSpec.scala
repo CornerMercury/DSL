@@ -3,10 +3,9 @@ package DSL
 import DSL.frontend.AST._
 
 class IdentifiersAssignmentsSpec extends ParserSpecHelper {
-
   "Identifiers" should "parse as identifier references" in {
-    assertParse("x", Sum(Ident("x")))
-    assertParse("foo_bar123", Sum(Ident("foo_bar123")))
+    assertParseExpr("x", Sum(Ident("x")))
+    assertParseExpr("foo_bar123", Sum(Ident("foo_bar123")))
   }
 
   "Assignments" should "parse a simple program with a final expression" in {
