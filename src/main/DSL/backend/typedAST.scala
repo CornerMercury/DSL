@@ -17,6 +17,8 @@ object typedAST {
   
   case class TyCustomDist(dist: Map[Int, Double], ty: DistTy) extends TyExpr
 
+  case class TyCall(name: String, args: List[TyExpr], ty: DistTy) extends TyExpr
+
   case class TyUnary(op: UnaryOp, inner: TyExpr, ty: DistTy) extends TyExpr
   case class TyBinary(op: BinaryOp, left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
 }

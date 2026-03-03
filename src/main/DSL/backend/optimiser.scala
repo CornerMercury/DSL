@@ -66,6 +66,8 @@ object optimiser {
   private def optimiseExpr(node: Expr, env: Map[String, Expr]): Expr = node match {
     case Ident(name) => env.getOrElse(name, node)
 
+    case Call(name, args) => Call(name, args.map(optimiseExpr(_, env)))
+
     case Add(l, r) => foldAdd(optimiseExpr(l, env), optimiseExpr(r, env))
     case Sub(l, r) => foldSub(optimiseExpr(l, env), optimiseExpr(r, env))
     case Mul(l, r) => foldMul(optimiseExpr(l, env), optimiseExpr(r, env))
@@ -144,6 +146,7 @@ object optimiser {
 
   private def getUsedVars(expr: Expr): Set[String] = expr match {
     case Ident(name) => Set(name)
+    case Call(_, args) => args.map(getUsedVars).foldLeft(Set.empty[String])(_ ++ _)
     case Add(l, r)   => getUsedVars(l) ++ getUsedVars(r)
     case Sub(l, r)   => getUsedVars(l) ++ getUsedVars(r)
     case Mul(l, r)   => getUsedVars(l) ++ getUsedVars(r)

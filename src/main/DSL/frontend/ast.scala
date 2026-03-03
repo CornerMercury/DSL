@@ -7,6 +7,9 @@ object AST {
   /** Identifier reference (variable usage). */
   case class Ident(name: String) extends Expr
   
+  /** Function call: funcName(arg1, arg2) */
+  case class Call(name: String, args: List[Expr]) extends Expr
+  
   sealed trait Stmt extends AstNode
 
   /** Variable assignment statement. */

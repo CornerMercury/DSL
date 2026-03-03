@@ -13,9 +13,7 @@ import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodK
 import DSL.frontend.AST._
 
 object parser {
-  // Changed return type from AstNode to Program to be strict
   def parse[Err: ErrorBuilder](input: String): Result[String, Program] = {
-    // Cast is safe because 'program' parser now strictly returns Program
     parser.parse(input) match {
       case Success(p)   => Success(p)
       case Failure(msg) => Failure(msg.toString)
@@ -72,12 +70,16 @@ object parser {
   /** Atoms */
 
   private lazy val atom: Parsley[Expr] = 
-    literal <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> atomic(prefixDice) <|> identRef <|> parens
+    literal <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = {
     integer.map(n => IntLiteral(n))
   }
   
+  // `atomic` ensures if we see an identifier but no '(', we backtrack so `identRef` can catch it.
+  private lazy val funcCall: Parsley[Call] =
+    (atomic(identifier <~ "(") <~> sepBy(expr, ",") <~ ")").map { case (name, args) => Call(name, args) }
+
   private lazy val identRef: Parsley[Ident] =
     identifier.map(Ident.apply)
 

@@ -6,22 +6,22 @@ import semanticTypes._
 
 object typer {
 
-  /** Public entry point: walk an untyped `Expr` and attach a `DistTy` to every node. */
   def annotate(expr: Expr): TyExpr =
     infer(expr)
 
   private def infer(expr: Expr): TyExpr = expr match {
     case Ident(name) =>
-      // Variables are currently treated as unknown distributions at type-check time.
-      // Their concrete distributions are supplied at runtime by the interpreter.
       TyIdent(name, UnknownTy)
 
     case IntLiteral(n) =>
       TyIntLiteral(n, ScalarTy)
 
     case CustomDist(dist) =>
-      // We can fully classify constant distributions up-front.
       TyCustomDist(dist, semanticTypes.classify(dist))
+
+    case Call(name, args) =>
+      val tArgs = args.map(infer)
+      TyCall(name, tArgs, GenericDistTy)
 
     case Sum(inner) =>
       val tInner = infer(inner)
@@ -64,7 +64,6 @@ object typer {
 
   private def diceResultType(countTy: DistTy, sidesTy: DistTy): DistTy = (countTy, sidesTy) match {
     case (UnknownTy, _) | (_, UnknownTy) => UnknownTy
-    // Static rules are intentionally conservative: most dice expressions are "generic".
     case _                               => GenericDistTy
   }
 
@@ -74,4 +73,3 @@ object typer {
     case _                               => GenericDistTy
   }
 }
-
