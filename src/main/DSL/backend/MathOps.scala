@@ -45,7 +45,7 @@ object MathOps {
   def combineDice(cDist: Distribution, sDist: Distribution, diceFn: (Int, Int) => Distribution): Distribution = {
     var result: Distribution = Map.empty
     for ((c, pC) <- cDist; (s, pS) <- sDist) {
-      val d = diceFn(if (c < 0) 0 else c, if (s < 1) 1 else s)
+      val d = diceFn(if (c < 0) 0 else c, if (s < 0) 0 else s)
       for ((valD, pD) <- d) {
         result = result.updated(valD, result.getOrElse(valD, 0.0) + pD * pC * pS)
       }
@@ -60,9 +60,9 @@ object MathOps {
     iterativeDice(count, sides, 1, _ * _)
 
   private def iterativeDice(count: Int, sides: Int, zero: Int, op: (Int, Int) => Int): Distribution = {
-    if (count <= 0) return Map(zero -> 1.0)
+    if (count <= 0 || sides <= 0) return Map(zero -> 1.0)
+
     val oneDie = (1 to sides).map(i => i -> 1.0 / sides).toMap
     (1 until count).foldLeft(oneDie)((acc, _) => convolve(acc, oneDie, op))
   }
 }
-

@@ -6,7 +6,7 @@ import scala.collection.mutable
 /** Scope errors reported by the scope checker (no source positions in AST). */
 sealed trait ScopeError
 case class UndeclaredVariable(name: String) extends ScopeError
-// case class RedeclaredVariable(name: String) extends ScopeError // <-- REMOVED
+case class UndeclaredFunction(name: String) extends ScopeError // <-- ADDED
 case class DuplicateFunction(name: String) extends ScopeError
 case class DuplicateParameter(name: String) extends ScopeError
 case object ReturnOutsideFunction extends ScopeError
@@ -47,6 +47,9 @@ object scopeChecker {
     def checkExpr(expr: Expr): Unit = expr match {
       case Ident(name) =>
         if (!isInScope(name)) errors += UndeclaredVariable(name)
+      case Call(name, args) =>
+        if (!declaredFuncs.contains(name)) errors += UndeclaredFunction(name)
+        args.foreach(checkExpr)
       case Dice(c, s) =>
         checkExpr(c)
         checkExpr(s)
