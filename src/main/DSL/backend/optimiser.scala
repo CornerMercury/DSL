@@ -53,6 +53,8 @@ object optimiser {
           (acc :+ optReturn, env, true)
 
         case Func(name, params, body) =>
+          // We do not pass the global env into the function body during static optimization 
+          // because globals might be mutated between function declaration and invocation.
           val optimizedBody = optimiseBlock(body)
           (acc :+ Func(name, params, optimizedBody), env, false)
       }
@@ -127,7 +129,7 @@ object optimiser {
             val newLive = (liveVars - name) ++ getUsedVars(expr)
             (stmt :: acc, newLive)
           } else {
-            // Dead store
+            // Dead store eliminated!
             (acc, liveVars)
           }
 
@@ -137,11 +139,21 @@ object optimiser {
         case Return(expr) =>
           (stmt :: acc, liveVars ++ getUsedVars(expr))
 
-        case f: Func =>
-          (f :: acc, liveVars)
+        case f @ Func(_, params, body) =>
+          // Extract variables captured by the function body (excluding its own parameters)
+          val capturedVars = body.map(getUsedVarsStmt).foldLeft(Set.empty[String])(_ ++ _) -- params.toSet
+          (f :: acc, liveVars ++ capturedVars)
       }
     }
     reversedOptimized
+  }
+
+  private def getUsedVarsStmt(stmt: Stmt): Set[String] = stmt match {
+    case Assign(_, expr) => getUsedVars(expr)
+    case ExprStmt(expr)  => getUsedVars(expr)
+    case Return(expr)    => getUsedVars(expr)
+    case Func(_, params, body) => 
+      body.map(getUsedVarsStmt).foldLeft(Set.empty[String])(_ ++ _) -- params.toSet
   }
 
   private def getUsedVars(expr: Expr): Set[String] = expr match {

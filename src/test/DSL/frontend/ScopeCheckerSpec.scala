@@ -4,7 +4,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers.*
 import DSL.frontend.AST._
 import DSL.frontend.scopeChecker
-import DSL.frontend.{ScopeError, UndeclaredVariable, DuplicateFunction, DuplicateParameter, ReturnOutsideFunction}
+import DSL.frontend.{ScopeError, UndeclaredVariable, UndeclaredFunction, DuplicateFunction, DuplicateParameter, ReturnOutsideFunction}
 
 class ScopeCheckerSpec extends AnyFlatSpec {
 
@@ -87,6 +87,32 @@ class ScopeCheckerSpec extends AnyFlatSpec {
       )),
       Assign("x", IntLiteral(10)),
       ExprStmt(Sum(Ident("x")))
+    )))
+  }
+
+  it should "allow a function to capture and use global variables" in {
+    // tests: y=1; func f(x) { return x - y }; 10d(f(2))
+    assertNoErrors(Program(List(
+      Assign("y", IntLiteral(1)),
+      Func("f", List("x"), List(
+        Return(Sub(Ident("x"), Ident("y")))
+      )),
+      ExprStmt(Sum(Dice(IntLiteral(10), Call("f", List(IntLiteral(2))))))
+    )))
+  }
+
+  it should "report an undeclared function call" in {
+    assertErrors(Program(List(
+      ExprStmt(Sum(Call("missing", List(IntLiteral(5)))))
+    )))(
+      UndeclaredFunction("missing")
+    )
+  }
+
+  it should "accept calls to declared functions" in {
+    assertNoErrors(Program(List(
+      Func("g", List("a"), List(Return(Ident("a")))),
+      ExprStmt(Sum(Call("g", List(IntLiteral(5)))))
     )))
   }
 }

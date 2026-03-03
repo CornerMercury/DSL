@@ -1,5 +1,7 @@
 y=1;
 func f(x) {
+    y=2;
     return x - y 
 };
-10d(f(2))
+f(2);
+10d(y)
