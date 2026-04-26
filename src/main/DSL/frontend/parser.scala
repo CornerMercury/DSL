@@ -5,7 +5,7 @@ import parsley.character.char
 import parsley.errors.ErrorBuilder
 import parsley.{Success, Failure, Result}
 import parsley.expr.{precedence, Ops, InfixL}
-import parsley.combinator.{sepBy, sepEndBy1}
+import parsley.combinator.{sepBy, some, option}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
@@ -14,7 +14,8 @@ import DSL.frontend.AST._
 
 object parser {
   def parse[Err: ErrorBuilder](input: String): Result[String, Program] = {
-    parser.parse(input) match {
+    // Uses the private lazy val 'parser' defined below
+    this.parser.parse(input) match {
       case Success(p)   => Success(p)
       case Failure(msg) => Failure(msg.toString)
     }
@@ -28,9 +29,12 @@ object parser {
   // Ensure the root parser returns a Program
   private lazy val parser: Parsley[Program] = fully(program)
 
-  /** Program: one or more statements. */
+  /** 
+   * Program: one or more statements. 
+   * Semicolons are now optional after any statement.
+   */
   private lazy val program: Parsley[Program] =
-    sepEndBy1(stmt, ";").map(Program.apply)
+    some(stmt <~ option(";")).map(Program.apply)
 
   private lazy val stmt: Parsley[Stmt] =
     assignStmt <|> returnStmt <|> funcDecl <|> exprStmt
@@ -43,7 +47,7 @@ object parser {
 
   private lazy val funcDecl: Parsley[Func] =
     atomic(funcKeyword ~> identifier <~ "(").flatMap { name =>
-      (sepBy(identifier, ",") <~ ")" <~ "{" <~> (sepEndBy1(stmt, ";") <~ "}")).map { case (params, body) =>
+      (sepBy(identifier, ",") <~ ")" <~ "{" <~> (some(stmt <~ option(";")) <~ "}")).map { case (params, body) =>
         Func(name, params, body)
       }
     }
@@ -76,7 +80,6 @@ object parser {
     integer.map(n => IntLiteral(n))
   }
   
-  // `atomic` ensures if we see an identifier but no '(', we backtrack so `identRef` can catch it.
   private lazy val funcCall: Parsley[Call] =
     (atomic(identifier <~ "(") <~> sepBy(expr, ",") <~ ")").map { case (name, args) => Call(name, args) }
 
