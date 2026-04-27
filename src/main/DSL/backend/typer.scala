@@ -6,82 +6,39 @@ import semanticTypes._
 
 object typer {
 
-  def annotate(expr: Expr): TyExpr =
-    infer(expr)
+  def annotate(expr: Expr): TyExpr = infer(expr)
 
   private def infer(expr: Expr): TyExpr = expr match {
-    case Ident(name) =>
-      TyIdent(name, UnknownTy)
-
-    case IntLiteral(n) =>
-      TyIntLiteral(n, ScalarTy)
-
-    case CustomDist(dist) =>
-      TyCustomDist(dist, semanticTypes.classify(dist))
-
-    case Call(name, args) =>
-      val tArgs = args.map(infer)
-      TyCall(name, tArgs, GenericDistTy)
+    case Ident(name)      => TyIdent(name, UnknownTy)
+    case IntLiteral(n)    => TyIntLiteral(n, ScalarTy)
+    case CustomDist(dist) => TyCustomDist(dist, semanticTypes.classify(dist))
+    case Call(name, args) => TyCall(name, args.map(infer), GenericDistTy)
 
     case Sum(inner) =>
       val tInner = infer(inner)
-      TyUnary(UnaryOp.Sum, tInner, unaryResultType(tInner.ty))
+      TyUnary(UnaryOp.Sum, tInner, tInner.ty)
 
     case Prod(inner) =>
       val tInner = infer(inner)
-      TyUnary(UnaryOp.Prod, tInner, unaryResultType(tInner.ty))
+      TyUnary(UnaryOp.Prod, tInner, tInner.ty)
 
     case Dice(c, s) =>
-      val tC = infer(c)
-      val tS = infer(s)
-      TyBinary(BinaryOp.Dice, tC, tS, diceResultType(tC.ty, tS.ty))
+      TyBinary(BinaryOp.Dice, infer(c), infer(s), GenericDistTy)
 
-    case Add(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      TyBinary(BinaryOp.Add, tL, tR, combineNumeric(tL.ty, tR.ty))
-
-    case Sub(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      TyBinary(BinaryOp.Sub, tL, tR, combineNumeric(tL.ty, tR.ty))
-
-    case Mul(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      TyBinary(BinaryOp.Mul, tL, tR, combineNumeric(tL.ty, tR.ty))
-
-    case Div(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      TyBinary(BinaryOp.Div, tL, tR, combineNumeric(tL.ty, tR.ty))
-
-    case Eq(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      // Stochastic comparison: result depends on rolls, behaves like numeric ops
-      TyBinary(BinaryOp.Eq, tL, tR, combineNumeric(tL.ty, tR.ty))
-
-    case IdenEq(l, r) =>
-      val tL = infer(l)
-      val tR = infer(r)
-      // Identity comparison: result is a single 100% True or False (Scalar)
-      TyBinary(BinaryOp.IdenEq, tL, tR, ScalarTy)
+    case Add(l, r) => binary(l, r, BinaryOp.Add)
+    case Sub(l, r) => binary(l, r, BinaryOp.Sub)
+    case Mul(l, r) => binary(l, r, BinaryOp.Mul)
+    case Div(l, r) => binary(l, r, BinaryOp.Div)
+    case Eq(l, r)  => binary(l, r, BinaryOp.Eq)
   }
 
-  private def unaryResultType(inner: DistTy): DistTy = inner match {
-    case UnknownTy => UnknownTy
-    case other     => other
-  }
-
-  private def diceResultType(countTy: DistTy, sidesTy: DistTy): DistTy = (countTy, sidesTy) match {
-    case (UnknownTy, _) | (_, UnknownTy) => UnknownTy
-    case _                               => GenericDistTy
-  }
-
-  private def combineNumeric(t1: DistTy, t2: DistTy): DistTy = (t1, t2) match {
-    case (UnknownTy, _) | (_, UnknownTy) => UnknownTy
-    case (ScalarTy, ScalarTy)            => ScalarTy
-    case _                               => GenericDistTy
+  private def binary(l: Expr, r: Expr, op: BinaryOp): TyBinary = {
+    val tL = infer(l)
+    val tR = infer(r)
+    val resTy = (tL.ty, tR.ty) match {
+      case (ScalarTy, ScalarTy) => ScalarTy
+      case _ => GenericDistTy
+    }
+    TyBinary(op, tL, tR, resTy)
   }
 }

@@ -50,12 +50,25 @@ object parser {
   private lazy val block: Parsley[List[Stmt]] = 
     "{" ~> some(stmt <~ option(";")) <~ "}"
 
+  private val rollOp = char('~')
+
+  /** Specifically parses: v = ~d6 used in if-headers */
+  private lazy val rollBinding: Parsley[RollBinding] =
+    (atomic(identifier <~ "=" <~ rollOp) <~> expr).map { case (id, e) => RollBinding(id, e) }
+
+  private lazy val ifBranchHead: Parsley[(List[RollBinding], Expr)] =
+    (many(atomic(rollBinding <~ ";")) <~> expr)
+
   private lazy val ifStmt: Parsley[If] = {
-    val ifBranch = ("if" ~> expr) <~> block
-    val elifBranch = ("elif" ~> expr) <~> block
+    val ifPart = ("if" ~> ifBranchHead <~> block).map { 
+      case ((binds, cond), body) => Branch(binds, cond, body) 
+    }
+    val elifPart = ("elif" ~> ifBranchHead <~> block).map { 
+      case ((binds, cond), body) => Branch(binds, cond, body) 
+    }
     val elsePart = "else" ~> block
     
-    (ifBranch <~> many(elifBranch) <~> option(elsePart)).map {
+    (ifPart <~> many(elifPart) <~> option(elsePart)).map {
       case ((firstBranch, elifs), maybeElse) => 
         If(firstBranch :: elifs, maybeElse)
     }
@@ -70,7 +83,7 @@ object parser {
 
   private lazy val expr: Parsley[Expr] = precedence[Expr](term)(
     // Comparison layer
-    Ops(InfixL)("===" #> IdenEq.apply, "==" #> Eq.apply),
+    Ops(InfixL)("==" #> Eq.apply),
     // Addition layer
     Ops(InfixL)("+" #> Add.apply, "-" #> Sub.apply)
   )

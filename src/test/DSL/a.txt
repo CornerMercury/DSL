@@ -1,5 +1,12 @@
-if d6 == 1 {
-    1
-} else {
-    0
+func f(x, n) {
+    if n == 0 {
+        return 0
+    }
+    if v = ~x; v == 6 {
+        return f(x, n - 1) + v
+    } else {
+        return v
+    }
 }
+
+d1

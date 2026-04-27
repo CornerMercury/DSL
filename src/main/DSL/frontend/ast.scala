@@ -19,8 +19,7 @@ object AST {
   case class Div(left: Expr, right: Expr) extends Expr
 
   // Comparisons
-  case class Eq(left: Expr, right: Expr) extends Expr     // (Rolled)
-  case class IdenEq(left: Expr, right: Expr) extends Expr // (Comparing distributions)
+  case class Eq(left: Expr, right: Expr) extends Expr
 
   sealed trait Stmt extends AstNode
   case class Assign(name: String, expr: Expr) extends Stmt
@@ -28,11 +27,15 @@ object AST {
   case class Return(expr: Expr) extends Stmt
   case class Func(name: String, params: List[String], body: List[Stmt]) extends Stmt
   
-  /** 
-   * branches: List of (Condition, Body) representing 'if' and 'elif's
-   * elseBody: Optional body for the 'else' block
-   */
-  case class If(branches: List[(Expr, List[Stmt])], elseBody: Option[List[Stmt]]) extends Stmt
+  // Binding in if-header: v = ~d6
+  case class RollBinding(name: String, expr: Expr)
 
+  case class Branch(
+    bindings: List[RollBinding], 
+    condition: Expr, 
+    body: List[Stmt]
+  )
+
+  case class If(branches: List[Branch], elseBody: Option[List[Stmt]]) extends Stmt
   case class Program(stmts: List[Stmt]) extends AstNode
 }

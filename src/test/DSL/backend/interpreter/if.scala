@@ -1,161 +1,127 @@
-package DSL.backend
+package DSL
 
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers.*
 import DSL.frontend.AST._
-import typedAST._
+import DSL.backend.interpreter
 
-object interpreter {
+class IfInterpreterSpec extends AnyFlatSpec {
 
-  type Env = Map[String, Distribution]
-  type FuncEnv = Map[String, Func]
-
-  private case class EvalState(
-    env: Env,
-    funcEnv: FuncEnv,
-    outs: List[Distribution],
-    retVal: Option[Distribution]
-  )
-
-  def interpretProgram(program: Program, sem: DistributionSemantics = DefaultDistributionSemantics): List[Distribution] = {
-    val finalState = evalStmts(program.stmts, Map.empty, Map.empty, sem, DiceMode.Sum)
-    val finalOuts = if (finalState.retVal.isDefined) finalState.outs :+ finalState.retVal.get else finalState.outs
-    if (finalOuts.nonEmpty) finalOuts
-    else throw new IllegalArgumentException("Program contains no expression statements to evaluate.")
+  "Interpreter with If statements" should "evaluate a simple deterministic if" in {
+    // if 1 { return 100 } else { return 0 }
+    val prog = Program(List(
+      If(
+        branches = List(
+          Branch(
+            bindings = Nil, 
+            condition = IntLiteral(1), 
+            body = List(Return(IntLiteral(100)))
+          )
+        ),
+        elseBody = Some(List(Return(IntLiteral(0))))
+      )
+    ))
+    val dists = interpreter.interpretProgram(prog)
+    dists.head shouldEqual Map(100 -> 1.0)
   }
 
-  private def evalStmts(
-    stmts: List[Stmt],
-    initEnv: Env,
-    initFuncEnv: FuncEnv,
-    sem: DistributionSemantics,
-    defaultMode: DiceMode
-  ): EvalState = {
-    stmts.foldLeft(EvalState(initEnv, initFuncEnv, List.empty, None)) { (state, stmt) =>
-      if (state.retVal.isDefined) state
-      else stmt match {
-        case Assign(name, expr) =>
-          val value = evalExprWithEnv(expr, defaultMode, sem, state.env, state.funcEnv)
-          state.copy(env = state.env.updated(name, value))
-
-        case ExprStmt(expr) =>
-          val value = evalExprWithEnv(expr, defaultMode, sem, state.env, state.funcEnv)
-          state.copy(outs = state.outs :+ value)
-
-        case f @ Func(name, _, _) =>
-          state.copy(funcEnv = state.funcEnv.updated(name, f))
-
-        case Return(expr) =>
-          val value = evalExprWithEnv(expr, defaultMode, sem, state.env, state.funcEnv)
-          state.copy(retVal = Some(value))
-
-        case If(branches, elseBody) =>
-          // 1. Find all variables used in conditions to handle dependencies correctly
-          val condVars = branches.flatMap(b => getUsedVars(b._1)).toSet.toList
-          val varDists = condVars.map(v => v -> state.env.getOrElse(v, Map.empty))
-
-          // 2. Expand the world: Iterate over every possible combination of values for those variables
-          val worlds = generateWorlds(varDists)
-
-          var combinedRet: Option[Distribution] = None
-          var combinedOuts: List[Distribution] = List.empty
-
-          for ((worldEnvUpdate, worldProb) <- worlds) {
-            val worldEnv = state.env ++ worldEnvUpdate.mapValues(v => Map(v -> 1.0))
-            
-            // 3. Evaluate the If-structure deterministically in this specific world
-            val branchResult = evalDeterministicIf(branches, elseBody, worldEnv, state.funcEnv, sem, defaultMode)
-            
-            // 4. Merge results weighted by the probability of this world
-            branchResult.retVal.foreach { rv =>
-              val weighted = MathOps.scale(rv, worldProb)
-              combinedRet = Some(combinedRet.map(MathOps.merge(_, weighted)).getOrElse(weighted))
-            }
-            
-            if (branchResult.outs.nonEmpty) {
-              if (combinedOuts.isEmpty) combinedOuts = branchResult.outs.map(MathOps.scale(_, worldProb))
-              else {
-                combinedOuts = combinedOuts.zipAll(branchResult.outs, Map.empty, Map.empty).map {
-                  case (oldD, newD) => MathOps.merge(oldD, MathOps.scale(newD, worldProb))
-                }
-              }
-            }
-          }
-          state.copy(outs = state.outs ++ combinedOuts, retVal = combinedRet)
-      }
-    }
+  it should "handle sampling and conditioning (AnyDice style)" in {
+    // func f(x) { if v = ~x; v == 6 { return v } }
+    // f(d6)
+    // Result should be {6: 0.1666...} because only the '6' outcome returns a value
+    val prog = Program(List(
+      Func("f", List("x"), List(
+        If(
+          branches = List(
+            Branch(
+              bindings = List(RollBinding("v", Ident("x"))),
+              condition = Eq(Ident("v"), IntLiteral(6)),
+              body = List(Return(Ident("v")))
+            )
+          ),
+          elseBody = None
+        )
+      )),
+      ExprStmt(Call("f", List(Dice(IntLiteral(1), IntLiteral(6)))))
+    ))
+    
+    val result = interpreter.interpretProgram(prog).head
+    // The sum of probabilities will be 1/6 (0.1666) because the other 5/6 outcomes 
+    // don't reach a return statement.
+    result(6) shouldBe (1.0 / 6.0) +- 1e-9
+    result.get(1) shouldBe None 
   }
 
-  /** Evaluates the If-Elif-Else chain where variables are fixed, so conditions are either 100% true or false. */
-  private def evalDeterministicIf(
-    branches: List[(Expr, List[Stmt])],
-    elseBody: Option[List[Stmt]],
-    env: Env,
-    funcEnv: FuncEnv,
-    sem: DistributionSemantics,
-    mode: DiceMode
-  ): EvalState = {
-    for ((condExpr, body) <- branches) {
-      val condDist = evalExprWithEnv(condExpr, mode, sem, env, funcEnv)
-      val isTrue = condDist.exists { case (v, p) => v != 0 && p > 0 }
-      if (isTrue) return evalStmts(body, env, funcEnv, sem, mode)
-    }
-    elseBody.map(body => evalStmts(body, env, funcEnv, sem, mode))
-      .getOrElse(EvalState(env, funcEnv, Nil, None))
+  it should "handle multiple sampled variables in the header" in {
+    // if v = ~d6; w = ~d6; v == w { return 1 } else { return 0 }
+    // Probability of matching on 2d6 is 1/6
+    val prog = Program(List(
+      If(
+        branches = List(
+          Branch(
+            bindings = List(
+              RollBinding("v", Dice(IntLiteral(1), IntLiteral(6))),
+              RollBinding("w", Dice(IntLiteral(1), IntLiteral(6)))
+            ),
+            condition = Eq(Ident("v"), Ident("w")),
+            body = List(Return(IntLiteral(1)))
+          )
+        ),
+        elseBody = Some(List(Return(IntLiteral(0))))
+      )
+    ))
+
+    val result = interpreter.interpretProgram(prog).head
+    result(1) shouldBe (6.0 / 36.0) +- 1e-9
+    result(0) shouldBe (30.0 / 36.0) +- 1e-9
   }
 
-  /** Generates Cartesian product of all possible outcomes for the given variables. */
-  private def generateWorlds(vars: List[(String, Distribution)]): List[(Map[String, Int], Double)] = {
-    vars.foldLeft(List((Map.empty[String, Int], 1.0))) { case (acc, (name, dist)) =>
-      for {
-        (currentMap, currentProb) <- acc
-        (value, prob) <- dist
-      } yield (currentMap + (name -> value), currentProb * prob)
-    }
+  it should "handle multiple elif branches with sampling" in {
+    // if v = ~d3; v == 1 { return 10 } elif v == 2 { return 20 } else { return 30 }
+    val prog = Program(List(
+      If(
+        branches = List(
+          Branch(
+            bindings = List(RollBinding("v", Dice(IntLiteral(1), IntLiteral(3)))),
+            condition = Eq(Ident("v"), IntLiteral(1)),
+            body = List(Return(IntLiteral(10)))
+          ),
+          Branch(
+            bindings = Nil, // v is already in scope from the first branch binding
+            condition = Eq(Ident("v"), IntLiteral(2)),
+            body = List(Return(IntLiteral(20)))
+          )
+        ),
+        elseBody = Some(List(Return(IntLiteral(30))))
+      )
+    ))
+
+    val result = interpreter.interpretProgram(prog).head
+    result(10) shouldBe 0.3333333333 +- 1e-5
+    result(20) shouldBe 0.3333333333 +- 1e-5
+    result(30) shouldBe 0.3333333333 +- 1e-5
   }
 
-  private def getUsedVars(expr: Expr): Set[String] = expr match {
-    case Ident(name)   => Set(name)
-    case Call(_, args) => args.flatMap(getUsedVars).toSet
-    case Add(l, r)     => getUsedVars(l) ++ getUsedVars(r)
-    case Sub(l, r)     => getUsedVars(l) ++ getUsedVars(r)
-    case Mul(l, r)     => getUsedVars(l) ++ getUsedVars(r)
-    case Div(l, r)     => getUsedVars(l) ++ getUsedVars(r)
-    case Eq(l, r)      => getUsedVars(l) ++ getUsedVars(r)
-    case IdenEq(l, r)  => getUsedVars(l) ++ getUsedVars(r)
-    case Dice(c, s)    => getUsedVars(c) ++ getUsedVars(s)
-    case Sum(e)        => getUsedVars(e)
-    case Prod(e)       => getUsedVars(e)
-    case _             => Set.empty
-  }
+  it should "merge outcomes from branches that return complex distributions" in {
+    // if v = ~d2; v == 1 { return d6 } else { return 0 }
+    val prog = Program(List(
+      If(
+        branches = List(
+          Branch(
+            bindings = List(RollBinding("v", Dice(IntLiteral(1), IntLiteral(2)))),
+            condition = Eq(Ident("v"), IntLiteral(1)),
+            body = List(Return(Dice(IntLiteral(1), IntLiteral(6))))
+          )
+        ),
+        elseBody = Some(List(Return(IntLiteral(0))))
+      )
+    ))
 
-  private def evalExprWithEnv(expr: Expr, defaultMode: DiceMode, sem: DistributionSemantics, env: Env, funcEnv: FuncEnv): Distribution = {
-    val typed = typer.annotate(expr)
-    eval(typed, defaultMode, sem, env, funcEnv)
-  }
-
-  private def eval(expr: TyExpr, mode: DiceMode, sem: DistributionSemantics, env: Env, funcEnv: FuncEnv): Distribution = expr match {
-    case TyIntLiteral(n, _) => sem.scalar(n)
-    case TyIdent(name, _)   => env.getOrElse(name, throw new IllegalArgumentException(s"Unbound identifier: $name"))
-    case TyCustomDist(raw, _) => sem.custom(raw)
-    case TyCall(name, args, _) =>
-      val func = funcEnv.getOrElse(name, throw new IllegalArgumentException(s"Undefined function: $name"))
-      if (func.params.size != args.size) throw new IllegalArgumentException(s"Function '$name' expects ${func.params.size} arguments, got ${args.size}")
-      val evaluatedArgs = args.map(arg => eval(arg, mode, sem, env, funcEnv))
-      val localEnv = env ++ func.params.zip(evaluatedArgs).toMap
-      val funcState = evalStmts(func.body, localEnv, funcEnv, sem, mode)
-      funcState.retVal.getOrElse(throw new IllegalArgumentException(s"Function '$name' reached the end of its body without returning a value."))
-    case TyUnary(UnaryOp.Sum, inner, _)  => eval(inner, DiceMode.Sum, sem, env, funcEnv)
-    case TyUnary(UnaryOp.Prod, inner, _) => eval(inner, DiceMode.Prod, sem, env, funcEnv)
-    case TyBinary(op, l, r, _) =>
-      val dL = eval(l, mode, sem, env, funcEnv)
-      val dR = eval(r, mode, sem, env, funcEnv)
-      op match {
-        case BinaryOp.Dice   => sem.dice(dL, dR, mode)
-        case BinaryOp.Add    => sem.add(dL, dR)
-        case BinaryOp.Sub    => sem.sub(dL, dR)
-        case BinaryOp.Mul    => sem.mul(dL, dR)
-        case BinaryOp.Div    => sem.div(dL, dR)
-        case BinaryOp.Eq     => sem.eq(dL, dR)
-        case BinaryOp.IdenEq => sem.idenEq(dL, dR)
-      }
+    val result = interpreter.interpretProgram(prog).head
+    // 50% chance of being 0 (else). 
+    // 50% chance of being d6 (1/6 * 0.5 = 0.0833 per outcome)
+    result(0) shouldBe 0.5 +- 1e-9
+    result(1) shouldBe (0.5 / 6.0) +- 1e-9
+    result(6) shouldBe (0.5 / 6.0) +- 1e-9
   }
 }

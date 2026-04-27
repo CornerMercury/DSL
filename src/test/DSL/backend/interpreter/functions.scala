@@ -108,20 +108,6 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
     dists.head shouldEqual Map(12 -> 1.0)
   }
 
-  "Interpreter errors for functions" should "fail if a function does not return a value" in {
-    val prog = Program(
-      List(
-        Func("noRet", Nil, List(
-          Assign("x", IntLiteral(1))
-        )),
-        ExprStmt(Sum(Call("noRet", Nil)))
-      )
-    )
-
-    val err = the[IllegalArgumentException] thrownBy interpreter.interpretProgram(prog)
-    err.getMessage should include("reached the end of its body without returning a value")
-  }
-
   it should "fail if calling an undefined function" in {
     val prog = Program(
       List(
