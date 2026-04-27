@@ -11,6 +11,9 @@ trait DistributionSemantics {
   def mul(d1: Distribution, d2: Distribution): Distribution
   def div(d1: Distribution, d2: Distribution): Distribution
 
+  def eq(d1: Distribution, d2: Distribution): Distribution
+  def idenEq(d1: Distribution, d2: Distribution): Distribution
+
   def dice(count: Distribution, sides: Distribution, mode: DiceMode): Distribution
 }
 
@@ -34,6 +37,12 @@ object DefaultDistributionSemantics extends DistributionSemantics {
 
   override def div(d1: Distribution, d2: Distribution): Distribution =
     MathOps.convolveDiv(d1, d2)
+
+  override def eq(d1: Distribution, d2: Distribution): Distribution =
+    MathOps.convolve(d1, d2, (a, b) => if (a == b) 1 else 0)
+
+  override def idenEq(d1: Distribution, d2: Distribution): Distribution =
+    if (d1 == d2) MathOps.scalar(1) else MathOps.scalar(0)
 
   override def dice(count: Distribution, sides: Distribution, mode: DiceMode): Distribution =
     SmartConstructors.dice(count, sides, mode)

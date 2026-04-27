@@ -6,7 +6,7 @@ import scala.collection.mutable
 /** Scope errors reported by the scope checker (no source positions in AST). */
 sealed trait ScopeError
 case class UndeclaredVariable(name: String) extends ScopeError
-case class UndeclaredFunction(name: String) extends ScopeError // <-- ADDED
+case class UndeclaredFunction(name: String) extends ScopeError
 case class DuplicateFunction(name: String) extends ScopeError
 case class DuplicateParameter(name: String) extends ScopeError
 case object ReturnOutsideFunction extends ScopeError
@@ -28,8 +28,6 @@ object scopeChecker {
     def isInScope(name: String): Boolean = scopes.exists(_.contains(name))
 
     // Registers a variable in the current scope.
-    // Since we allow redeclaration (updates), we just add it.
-    // If it exists, it effectively updates it; if not, it declares it.
     def declareVar(name: String): Unit = {
       currentScope.add(name)
     }
@@ -69,17 +67,19 @@ object scopeChecker {
       case Div(l, r) =>
         checkExpr(l)
         checkExpr(r)
+      case Eq(l, r) =>
+        checkExpr(l)
+        checkExpr(r)
+      case IdenEq(l, r) =>
+        checkExpr(l)
+        checkExpr(r)
       case IntLiteral(_) | CustomDist(_) =>
         ()
     }
 
     def checkStmt(stmt: Stmt, inFunction: Boolean): Unit = stmt match {
       case Assign(name, expr) =>
-        // 1. Check the expression on the right first.
-        // This ensures cases like "x = x + 1" fail if x wasn't defined BEFORE this line.
         checkExpr(expr)
-        
-        // 2. Now declare (or update) the variable name in the current scope.
         declareVar(name)
 
       case ExprStmt(expr) =>
@@ -96,11 +96,24 @@ object scopeChecker {
           if (paramSet.contains(p)) errors += DuplicateParameter(p)
           else { 
             paramSet.add(p)
-            declareVar(p) // Parameters count as declarations in the new scope
+            declareVar(p) 
           }
         }
         body.foreach(checkStmt(_, inFunction = true))
         upLayer()
+
+      case If(branches, elseBody) =>
+        branches.foreach { case (condition, body) =>
+          checkExpr(condition) // Condition is checked in the outer scope
+          downLayer()          // Body gets its own scope
+          body.foreach(checkStmt(_, inFunction))
+          upLayer()
+        }
+        elseBody.foreach { body =>
+          downLayer()
+          body.foreach(checkStmt(_, inFunction))
+          upLayer()
+        }
     }
 
     program match {

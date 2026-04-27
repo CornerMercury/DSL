@@ -17,10 +17,7 @@ object interpreter {
 
   def interpretProgram(program: Program, sem: DistributionSemantics = DefaultDistributionSemantics): List[Distribution] = {
     val finalState = evalStmts(program.stmts, Map.empty, Map.empty, sem, DiceMode.Sum)
-    
-    // If the program short-circuited via a top-level return, treat that as an output
     val finalOuts = if (finalState.retVal.isDefined) finalState.outs :+ finalState.retVal.get else finalState.outs
-
     if (finalOuts.nonEmpty) finalOuts
     else throw new IllegalArgumentException("Program contains no expression statements to evaluate.")
   }
@@ -51,48 +48,83 @@ object interpreter {
           state.copy(retVal = Some(value))
 
         case If(branches, elseBody) =>
-          var remainingProb = 1.0
+          // 1. Find all variables used in conditions to handle dependencies correctly
+          val condVars = branches.flatMap(b => getUsedVars(b._1)).toSet.toList
+          val varDists = condVars.map(v => v -> state.env.getOrElse(v, Map.empty))
+
+          // 2. Expand the world: Iterate over every possible combination of values for those variables
+          val worlds = generateWorlds(varDists)
+
           var combinedRet: Option[Distribution] = None
           var combinedOuts: List[Distribution] = List.empty
 
-          // Helper to merge weighted outputs into the combined list
-          def mergeOuts(newOuts: List[Distribution], weight: Double): Unit = {
-            if (combinedOuts.isEmpty) combinedOuts = newOuts.map(MathOps.scale(_, weight))
-            else {
-              combinedOuts = combinedOuts.zipAll(newOuts, Map.empty, Map.empty).map {
-                case (oldD, newD) => MathOps.merge(oldD, MathOps.scale(newD, weight))
+          for ((worldEnvUpdate, worldProb) <- worlds) {
+            val worldEnv = state.env ++ worldEnvUpdate.mapValues(v => Map(v -> 1.0))
+            
+            // 3. Evaluate the If-structure deterministically in this specific world
+            val branchResult = evalDeterministicIf(branches, elseBody, worldEnv, state.funcEnv, sem, defaultMode)
+            
+            // 4. Merge results weighted by the probability of this world
+            branchResult.retVal.foreach { rv =>
+              val weighted = MathOps.scale(rv, worldProb)
+              combinedRet = Some(combinedRet.map(MathOps.merge(_, weighted)).getOrElse(weighted))
+            }
+            
+            if (branchResult.outs.nonEmpty) {
+              if (combinedOuts.isEmpty) combinedOuts = branchResult.outs.map(MathOps.scale(_, worldProb))
+              else {
+                combinedOuts = combinedOuts.zipAll(branchResult.outs, Map.empty, Map.empty).map {
+                  case (oldD, newD) => MathOps.merge(oldD, MathOps.scale(newD, worldProb))
+                }
               }
             }
           }
-
-          for ((condExpr, body) <- branches if remainingProb > 0) {
-            val condDist = evalExprWithEnv(condExpr, defaultMode, sem, state.env, state.funcEnv)
-            val pTrue = condDist.filterKeys(_ != 0).values.sum
-            val branchWeight = pTrue * remainingProb
-
-            if (branchWeight > 0) {
-              val branchState = evalStmts(body, state.env, state.funcEnv, sem, defaultMode)
-              mergeOuts(branchState.outs, branchWeight)
-              branchState.retVal.foreach { rv =>
-                val weightedRv = MathOps.scale(rv, branchWeight)
-                combinedRet = Some(combinedRet.map(MathOps.merge(_, weightedRv)).getOrElse(weightedRv))
-              }
-            }
-            remainingProb -= branchWeight
-          }
-
-          if (remainingProb > 0 && elseBody.isDefined) {
-            val elseState = evalStmts(elseBody.get, state.env, state.funcEnv, sem, defaultMode)
-            mergeOuts(elseState.outs, remainingProb)
-            elseState.retVal.foreach { rv =>
-              val weightedRv = MathOps.scale(rv, remainingProb)
-              combinedRet = Some(combinedRet.map(MathOps.merge(_, weightedRv)).getOrElse(weightedRv))
-            }
-          }
-          
           state.copy(outs = state.outs ++ combinedOuts, retVal = combinedRet)
       }
     }
+  }
+
+  /** Evaluates the If-Elif-Else chain where variables are fixed, so conditions are either 100% true or false. */
+  private def evalDeterministicIf(
+    branches: List[(Expr, List[Stmt])],
+    elseBody: Option[List[Stmt]],
+    env: Env,
+    funcEnv: FuncEnv,
+    sem: DistributionSemantics,
+    mode: DiceMode
+  ): EvalState = {
+    for ((condExpr, body) <- branches) {
+      val condDist = evalExprWithEnv(condExpr, mode, sem, env, funcEnv)
+      val isTrue = condDist.exists { case (v, p) => v != 0 && p > 0 }
+      if (isTrue) return evalStmts(body, env, funcEnv, sem, mode)
+    }
+    elseBody.map(body => evalStmts(body, env, funcEnv, sem, mode))
+      .getOrElse(EvalState(env, funcEnv, Nil, None))
+  }
+
+  /** Generates Cartesian product of all possible outcomes for the given variables. */
+  private def generateWorlds(vars: List[(String, Distribution)]): List[(Map[String, Int], Double)] = {
+    vars.foldLeft(List((Map.empty[String, Int], 1.0))) { case (acc, (name, dist)) =>
+      for {
+        (currentMap, currentProb) <- acc
+        (value, prob) <- dist
+      } yield (currentMap + (name -> value), currentProb * prob)
+    }
+  }
+
+  private def getUsedVars(expr: Expr): Set[String] = expr match {
+    case Ident(name)   => Set(name)
+    case Call(_, args) => args.flatMap(getUsedVars).toSet
+    case Add(l, r)     => getUsedVars(l) ++ getUsedVars(r)
+    case Sub(l, r)     => getUsedVars(l) ++ getUsedVars(r)
+    case Mul(l, r)     => getUsedVars(l) ++ getUsedVars(r)
+    case Div(l, r)     => getUsedVars(l) ++ getUsedVars(r)
+    case Eq(l, r)      => getUsedVars(l) ++ getUsedVars(r)
+    case IdenEq(l, r)  => getUsedVars(l) ++ getUsedVars(r)
+    case Dice(c, s)    => getUsedVars(c) ++ getUsedVars(s)
+    case Sum(e)        => getUsedVars(e)
+    case Prod(e)       => getUsedVars(e)
+    case _             => Set.empty
   }
 
   private def evalExprWithEnv(expr: Expr, defaultMode: DiceMode, sem: DistributionSemantics, env: Env, funcEnv: FuncEnv): Distribution = {
@@ -106,14 +138,11 @@ object interpreter {
     case TyCustomDist(raw, _) => sem.custom(raw)
     case TyCall(name, args, _) =>
       val func = funcEnv.getOrElse(name, throw new IllegalArgumentException(s"Undefined function: $name"))
-      if (func.params.size != args.size) {
-        throw new IllegalArgumentException(s"Function '$name' expects ${func.params.size} arguments, got ${args.size}")
-      }
+      if (func.params.size != args.size) throw new IllegalArgumentException(s"Function '$name' expects ${func.params.size} arguments, got ${args.size}")
       val evaluatedArgs = args.map(arg => eval(arg, mode, sem, env, funcEnv))
       val localEnv = env ++ func.params.zip(evaluatedArgs).toMap
       val funcState = evalStmts(func.body, localEnv, funcEnv, sem, mode)
       funcState.retVal.getOrElse(throw new IllegalArgumentException(s"Function '$name' reached the end of its body without returning a value."))
-
     case TyUnary(UnaryOp.Sum, inner, _)  => eval(inner, DiceMode.Sum, sem, env, funcEnv)
     case TyUnary(UnaryOp.Prod, inner, _) => eval(inner, DiceMode.Prod, sem, env, funcEnv)
     case TyBinary(op, l, r, _) =>

@@ -97,5 +97,23 @@ class TyperSpec extends AnyFlatSpec {
         fail(s"Expected Add of non-scalars to be GenericDistTy, got $other")
     }
   }
+
+  it should "type stochastic equality as GenericDist when dice are involved" in {
+    val typed = typer.annotate(Eq(Dice(IntLiteral(1), IntLiteral(6)), IntLiteral(6)))
+    typed match {
+      case TyBinary(BinaryOp.Eq, _, _, ty) =>
+        ty shouldBe GenericDistTy // Because it returns a {0, 1} distribution
+      case _ => fail("Wrong type")
+    }
+  }
+
+  it should "type identity equality as Scalar regardless of operands" in {
+    val typed = typer.annotate(IdenEq(Dice(IntLiteral(1), IntLiteral(6)), Dice(IntLiteral(1), IntLiteral(6))))
+    typed match {
+      case TyBinary(BinaryOp.IdenEq, _, _, ty) =>
+        ty shouldBe ScalarTy // Identity is a deterministic True/False
+      case _ => fail("Wrong type")
+    }
+  }
 }
 

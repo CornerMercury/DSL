@@ -65,4 +65,13 @@ object MathOps {
     val oneDie = (1 to sides).map(i => i -> 1.0 / sides).toMap
     (1 until count).foldLeft(oneDie)((acc, _) => convolve(acc, oneDie, op))
   }
+
+  def scale(d: Distribution, factor: Double): Distribution =
+    d.view.mapValues(_ * factor).toMap
+
+  def merge(d1: Distribution, d2: Distribution): Distribution = {
+    d2.foldLeft(d1) { case (acc, (v, p)) =>
+      acc.updated(v, acc.getOrElse(v, 0.0) + p)
+    }
+  }
 }

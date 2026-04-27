@@ -55,6 +55,18 @@ object typer {
       val tL = infer(l)
       val tR = infer(r)
       TyBinary(BinaryOp.Div, tL, tR, combineNumeric(tL.ty, tR.ty))
+
+    case Eq(l, r) =>
+      val tL = infer(l)
+      val tR = infer(r)
+      // Stochastic comparison: result depends on rolls, behaves like numeric ops
+      TyBinary(BinaryOp.Eq, tL, tR, combineNumeric(tL.ty, tR.ty))
+
+    case IdenEq(l, r) =>
+      val tL = infer(l)
+      val tR = infer(r)
+      // Identity comparison: result is a single 100% True or False (Scalar)
+      TyBinary(BinaryOp.IdenEq, tL, tR, ScalarTy)
   }
 
   private def unaryResultType(inner: DistTy): DistTy = inner match {

@@ -1,7 +1,5 @@
-func f(x) {
-    return g(x) - 1 
+if d6 == 1 {
+    1
+} else {
+    0
 }
-func g(x) {
-    return x - 2
-}
-f(4)

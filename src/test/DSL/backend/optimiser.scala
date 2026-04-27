@@ -194,4 +194,56 @@ class OptimiserSpec extends AnyFlatSpec with Matchers {
       Return(Ident("a"))
     )
   }
+
+  it should "fold comparison constants" in {
+    val ast = List(
+      ExprStmt(Eq(IntLiteral(1), IntLiteral(1))),   // 1 == 1 -> 1
+      ExprStmt(Eq(IntLiteral(1), IntLiteral(2))),   // 1 == 2 -> 0
+      ExprStmt(IdenEq(IntLiteral(5), IntLiteral(5))) // 5 === 5 -> 1
+    )
+
+    val result = optimize(ast: _*)
+
+    result shouldBe List(
+      ExprStmt(IntLiteral(1)),
+      ExprStmt(IntLiteral(0)),
+      ExprStmt(IntLiteral(1))
+    )
+  }
+
+  it should "optimize inside If statement branches" in {
+    // if 1 { x = 1 + 2; return x }
+    val ast = List(
+      If(
+        branches = List((IntLiteral(1), List(
+          Assign("x", Add(IntLiteral(1), IntLiteral(2))),
+          Return(Ident("x"))
+        ))),
+        elseBody = None
+      )
+    )
+
+    val result = optimize(ast: _*)
+
+    result shouldBe List(
+      If(List((IntLiteral(1), List(Return(IntLiteral(3))))), None)
+    )
+  }
+
+  it should "poison variables modified inside an if block" in {
+    // x = 10
+    // if d6 { x = 20 }
+    // return x  <-- cannot be optimized to 10 or 20 because x is 'poisoned'
+    val ast = List(
+      Assign("x", IntLiteral(10)),
+      If(List((Dice(IntLiteral(1), IntLiteral(6)), List(Assign("x", IntLiteral(20))))), None),
+      Return(Ident("x"))
+    )
+
+    val result = optimize(ast: _*)
+
+    // x=10 is kept because it's used in the If (potentially), 
+    // and Return(x) is kept because x is no longer a known constant.
+    result.last shouldBe Return(Ident("x"))
+  }
 }

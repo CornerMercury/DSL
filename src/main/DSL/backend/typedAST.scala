@@ -10,7 +10,10 @@ object typedAST {
   }
 
   enum UnaryOp { case Sum, Prod }
-  enum BinaryOp { case Dice, Add, Sub, Mul, Div }
+
+  enum BinaryOp { 
+    case Dice, Add, Sub, Mul, Div, Eq, IdenEq
+  }
 
   case class TyIntLiteral(value: Int, ty: DistTy) extends TyExpr
   case class TyIdent(name: String, ty: DistTy) extends TyExpr
