@@ -12,6 +12,7 @@ object AST {
   case class Prod(expr: Expr) extends Expr
   case class Max(expr: Expr) extends Expr
   case class Min(expr: Expr) extends Expr
+  case class MapExpr(funcName: String, expr: Expr) extends Expr
   case class CustomDist(dist: Map[Int, Double]) extends Expr
 
   case class Add(left: Expr, right: Expr) extends Expr

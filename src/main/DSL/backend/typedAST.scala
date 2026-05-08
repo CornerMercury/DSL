@@ -38,4 +38,6 @@ object typedAST {
     elseBranch: TyBlock,
     ty: DistTy
   ) extends TyExpr
+
+  case class TyMapExpr(funcName: String, inner: TyExpr, ty: DistTy) extends TyExpr
 }

@@ -60,6 +60,25 @@ object interpreter {
       val newEnv = env ++ func.params.zip(evaluatedArgs)
       eval(typer.annotate(func.body), newEnv, funcEnv, sem, mode)
 
+    case TyMapExpr(funcName, inner, _) =>
+      val dist = eval(inner, env, funcEnv, sem, mode)
+      val func = funcEnv.getOrElse(funcName,
+        throw new IllegalArgumentException(s"Undefined function: $funcName"))
+      
+      if (func.params.size != 1) {
+        throw new IllegalArgumentException(s"Function ${func.name} expects 1 argument for map, got ${func.params.size}")
+      }
+
+      var result: Distribution = Map.empty
+      for ((v, p) <- dist) {
+        val newEnv = env + (func.params.head -> Map(v -> 1.0))
+        val resDist = eval(typer.annotate(func.body), newEnv, funcEnv, sem, mode)
+        for ((rv, rp) <- resDist) {
+          result = result.updated(rv, result.getOrElse(rv, 0.0) + p * rp)
+        }
+      }
+      result
+
     case TyBlock(stmts, finalExpr, _) =>
       var currentEnv = env
       stmts.foreach {

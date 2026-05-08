@@ -9,7 +9,7 @@ import parsley.combinator.{sepBy, some, option, many}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, funcKeyword}
+import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, mapKeyword, funcKeyword}
 import DSL.frontend.AST._
 
 object parser {
@@ -21,7 +21,7 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
-    case _: Sum | _: Prod | _: Max | _: Min | _: IfExpr => e
+    case _: Sum | _: Prod | _: Max | _: Min | _: MapExpr | _: IfExpr => e
     case _                             => Sum(e)
   }
 
@@ -34,7 +34,10 @@ object parser {
     funcDecl.map(Left(_)) <|> assignStmt.map(Left(_)) <|> expr.map(e => Right(wrapInSumIfNeeded(e)))
 
   private lazy val assignStmt: Parsley[Assign] =
-    (atomic(identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
+    // Wrapping the entire assignment in `atomic` ensures that if it consumes "x ="
+    // but fails to parse the right-hand expression (e.g., for "x == 1"), it backtracks
+    // so that the `expr` parser can correctly handle it as an equality check.
+    atomic((identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
 
   private lazy val funcDecl: Parsley[Func] =
     atomic(funcKeyword ~> identifier <~ "(").flatMap { name =>
@@ -111,7 +114,7 @@ object parser {
   /** Atoms - ifExpr MUST come before customDistLiteral to prevent { being consumed by dist parser */
   private lazy val atom: Parsley[Expr] = 
     literal <|> ifExpr <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> 
-    atomic(maxCall) <|> atomic(minCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
+    atomic(maxCall) <|> atomic(minCall) <|> atomic(mapCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = 
     integer.map(IntLiteral.apply)
@@ -140,6 +143,9 @@ object parser {
 
   private lazy val minCall: Parsley[Min] = 
     (minKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Min.apply)
+
+  private lazy val mapCall: Parsley[MapExpr] = 
+    (mapKeyword ~> "(" ~> identifier <~ "," <~> expr <~ ")").map { case (name, e) => MapExpr(name, e) }
 
   private lazy val prefixDice: Parsley[Dice] = 
     diceOp ~> atom.map(sides => Dice(IntLiteral(1), sides))

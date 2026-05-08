@@ -46,6 +46,7 @@ private def showTy(e: TyExpr): String = {
     case TyUnary(UnaryOp.Prod, inner, t) => s"prod(${showTy(inner)}):${tyName(t)}"
     case TyUnary(UnaryOp.Max, inner, t)  => s"max(${showTy(inner)}):${tyName(t)}"
     case TyUnary(UnaryOp.Min, inner, t)  => s"min(${showTy(inner)}):${tyName(t)}"
+    case TyMapExpr(f, inner, t)          => s"map($f, ${showTy(inner)}):${tyName(t)}"
     case TyBinary(BinaryOp.Dice, c, s, t) => s"dice(${showTy(c)},${showTy(s)}):${tyName(t)}"
     case TyBinary(BinaryOp.Add, l, r, t)  => s"(${showTy(l)}+${showTy(r)}):${tyName(t)}"
     case TyBinary(BinaryOp.Sub, l, r, t)  => s"(${showTy(l)}-${showTy(r)}):${tyName(t)}"

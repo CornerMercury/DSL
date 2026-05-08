@@ -38,6 +38,11 @@ object scopeChecker {
           errors += UndeclaredFunction(name)
         args.foreach(checkExpr)
 
+      case MapExpr(funcName, inner) =>
+        if (!declaredFuncs.contains(funcName))
+          errors += UndeclaredFunction(funcName)
+        checkExpr(inner)
+
       case Dice(c, s) => checkExpr(c); checkExpr(s)
       case Sum(i)     => checkExpr(i)
       case Prod(i)    => checkExpr(i)

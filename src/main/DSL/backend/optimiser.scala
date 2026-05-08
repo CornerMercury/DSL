@@ -61,16 +61,17 @@ object optimiser {
       stmts.collect { case Assign(name, _) => name }.toSet ++ assignedVarsExpr(finalExpr)
     case IfExpr(branches, elseB) =>
       branches.flatMap(assignedVarsBranch).toSet ++ assignedVars(elseB)
-    case Dice(c, s) => assignedVarsExpr(c) ++ assignedVarsExpr(s)
-    case Sum(i)     => assignedVarsExpr(i)
-    case Prod(i)    => assignedVarsExpr(i)
-    case Max(i)     => assignedVarsExpr(i)
-    case Min(i)     => assignedVarsExpr(i)
-    case Add(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Sub(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Mul(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Div(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Eq(l, r)   => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Dice(c, s)    => assignedVarsExpr(c) ++ assignedVarsExpr(s)
+    case Sum(i)        => assignedVarsExpr(i)
+    case Prod(i)       => assignedVarsExpr(i)
+    case Max(i)        => assignedVarsExpr(i)
+    case Min(i)        => assignedVarsExpr(i)
+    case MapExpr(_, i) => assignedVarsExpr(i)
+    case Add(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Sub(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Mul(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Div(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Eq(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Call(_, args) => args.flatMap(assignedVarsExpr).toSet
     case _ => Set.empty
   }
@@ -125,10 +126,11 @@ object optimiser {
       case Dice(c, s) =>
         Dice(optimiseExpr(c, env), optimiseExpr(s, env))
 
-      case Sum(i)  => Sum(optimiseExpr(i, env))
-      case Prod(i) => Prod(optimiseExpr(i, env))
-      case Max(i)  => Max(optimiseExpr(i, env))
-      case Min(i)  => Min(optimiseExpr(i, env))
+      case Sum(i)        => Sum(optimiseExpr(i, env))
+      case Prod(i)       => Prod(optimiseExpr(i, env))
+      case Max(i)        => Max(optimiseExpr(i, env))
+      case Min(i)        => Min(optimiseExpr(i, env))
+      case MapExpr(f, i) => MapExpr(f, optimiseExpr(i, env))
 
       case Block(stmts, finalExpr) =>
         val (optStmts, optFinal) = optimiseBlock(stmts, finalExpr)
@@ -232,6 +234,7 @@ object optimiser {
     case Prod(i)       => getUsed(i)
     case Max(i)        => getUsed(i)
     case Min(i)        => getUsed(i)
+    case MapExpr(_, i) => getUsed(i)
     case Block(stmts, f) =>
       stmts.flatMap {
         case Assign(_, e) => getUsed(e)

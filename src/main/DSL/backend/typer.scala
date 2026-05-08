@@ -15,6 +15,10 @@ object typer {
     case CustomDist(dist) => TyCustomDist(dist, classify(dist))
     case Call(name, args) => TyCall(name, args.map(infer), GenericDistTy)
 
+    case MapExpr(funcName, inner) =>
+      val tInner = infer(inner)
+      TyMapExpr(funcName, tInner, GenericDistTy)
+
     case Block(stmts, finalExpr) =>
       val tFinal = infer(finalExpr)
       TyBlock(stmts, tFinal, tFinal.ty)

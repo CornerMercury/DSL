@@ -131,4 +131,35 @@ class ScopeCheckerSpec extends AnyFlatSpec {
       )))
     ))))
   }
+
+  /** MapExpr Tests */
+
+  it should "accept map with a declared function" in {
+    // func f(x) { x == 1 }
+    // map(f, d6)
+    assertNoErrors(Program(List(
+      Left(Func("f", List("x"), Block(Nil, Eq(Ident("x"), IntLiteral(1))))),
+      Right(MapExpr("f", Dice(IntLiteral(1), IntLiteral(6))))
+    )))
+  }
+
+  it should "report undeclared function in map" in {
+    // map(missing, d6)
+    assertErrors(Program(List(
+      Right(MapExpr("missing", Dice(IntLiteral(1), IntLiteral(6))))
+    )))(
+      UndeclaredFunction("missing")
+    )
+  }
+
+  it should "report undeclared variable in map inner expression" in {
+    // func f(x) { x }
+    // map(f, y) where y is undeclared
+    assertErrors(Program(List(
+      Left(Func("f", List("x"), Block(Nil, Ident("x")))),
+      Right(MapExpr("f", Ident("y")))
+    )))(
+      UndeclaredVariable("y")
+    )
+  }
 }
