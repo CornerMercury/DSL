@@ -19,11 +19,12 @@ object typer {
       val tFinal = infer(finalExpr)
       TyBlock(stmts, tFinal, tFinal.ty)
 
-    case IfExpr(bindings, cond, thenB, elseB) =>
-      val tCond = infer(cond)
-      val tThen = infer(thenB).asInstanceOf[TyBlock]
+    case IfExpr(branches, elseB) =>
+      val tBranches = branches.map { b =>
+        TyIfBranch(b.bindings, infer(b.condition), infer(b.body).asInstanceOf[TyBlock])
+      }
       val tElse = infer(elseB).asInstanceOf[TyBlock]
-      TyIfExpr(bindings, tCond, tThen, tElse, tThen.ty)
+      TyIfExpr(tBranches, tElse, tElse.ty)
 
     case Sum(inner) =>
       val tInner = infer(inner)

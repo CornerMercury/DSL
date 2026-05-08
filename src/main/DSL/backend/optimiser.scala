@@ -5,10 +5,19 @@ import DSL.frontend.AST._
 object optimiser {
 
   def optimise(program: Program): Program =
-    Program(optimiseBlock(program.stmts))
+    Program(optimiseTopLevel(program.topLevel))
 
-  private def optimiseBlock(stmts: List[Stmt]): List[Stmt] =
-    eliminateDeadStores(propagateConstants(stmts))
+  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] =
+    topLevel.map {
+      case Left(stmt) => Left(optimiseStmt(stmt))
+      case Right(expr) => Right(optimiseExpr(expr, Map.empty))
+    }
+
+  private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
+    val optStmts = eliminateDeadStores(propagateConstants(stmts))
+    val optFinal = optimiseExpr(finalExpr, Map.empty)
+    (optStmts, optFinal)
+  }
 
   private def propagateConstants(stmts: List[Stmt]): List[Stmt] = {
     val (finalStmts, _) =
@@ -23,22 +32,54 @@ object optimiser {
             }
             (acc :+ Assign(name, opt), newEnv)
 
-          case ExprStmt(e) =>
-            (acc :+ ExprStmt(optimiseExpr(e, env)), env)
-
           case Func(n, p, b) =>
-            val optBody = optimiseBlockExpr(b)
-            (acc :+ Func(n, p, optBody), env)
+            val (optStmts, optFinal) = optimiseBlock(b.statements, b.finalExpr)
+            (acc :+ Func(n, p, Block(optStmts, optFinal)), env)
         }
       }
 
     finalStmts
   }
 
-  private def optimiseBlockExpr(block: Block): Block = {
-    val optStmts = optimiseBlock(block.statements)
-    val optFinal = optimiseExpr(block.finalExpr, Map.empty)
-    Block(optStmts, optFinal)
+  private def assignedVars(block: Block): Set[String] = {
+    block.statements.collect {
+      case Assign(name, _) => name
+    }.toSet ++ assignedVarsExpr(block.finalExpr)
+  }
+
+  private def assignedVarsBranch(branch: IfBranch): Set[String] = {
+    branch.bindings.map(_.name).toSet ++ assignedVarsExpr(branch.condition) ++ assignedVars(branch.body)
+  }
+
+  private def assignedVarsExpr(expr: Expr): Set[String] = expr match {
+    case Block(stmts, finalExpr) =>
+      stmts.collect { case Assign(name, _) => name }.toSet ++ assignedVarsExpr(finalExpr)
+    case IfExpr(branches, elseB) =>
+      branches.flatMap(assignedVarsBranch).toSet ++ assignedVars(elseB)
+    case Dice(c, s) => assignedVarsExpr(c) ++ assignedVarsExpr(s)
+    case Sum(i)     => assignedVarsExpr(i)
+    case Prod(i)    => assignedVarsExpr(i)
+    case Add(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Sub(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Mul(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Div(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Eq(l, r)   => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Call(_, args) => args.flatMap(assignedVarsExpr).toSet
+    case _ => Set.empty
+  }
+
+  private def optimiseIfBranch(branch: IfBranch): IfBranch = {
+    val optBinds = branch.bindings.map(b => b.copy(expr = optimiseExpr(b.expr, Map.empty)))
+    val optCond  = optimiseExpr(branch.condition, Map.empty)
+    val (optStmts, optFinal) = optimiseBlock(branch.body.statements, branch.body.finalExpr)
+    IfBranch(optBinds, optCond, Block(optStmts, optFinal))
+  }
+
+  private def optimiseStmt(stmt: Stmt): Stmt = stmt match {
+    case Assign(name, expr) => Assign(name, optimiseExpr(expr, Map.empty))
+    case Func(n, p, b) =>
+      val (optStmts, optFinal) = optimiseBlock(b.statements, b.finalExpr)
+      Func(n, p, Block(optStmts, optFinal))
   }
 
   private def optimiseExpr(node: Expr, env: Map[String, Expr]): Expr =
@@ -62,16 +103,13 @@ object optimiser {
       case Prod(i) => Prod(optimiseExpr(i, env))
 
       case Block(stmts, finalExpr) =>
-        optimiseBlockExpr(Block(stmts, finalExpr))
+        val (optStmts, optFinal) = optimiseBlock(stmts, finalExpr)
+        Block(optStmts, optFinal)
 
-      case IfExpr(bindings, cond, thenB, elseB) =>
-        val optBinds = bindings.map(b =>
-          b.copy(expr = optimiseExpr(b.expr, env))
-        )
-        val optCond  = optimiseExpr(cond, env)
-        val optThen  = optimiseBlockExpr(thenB)
-        val optElse  = optimiseBlockExpr(elseB)
-        IfExpr(optBinds, optCond, optThen, optElse)
+      case IfExpr(branches, elseB) =>
+        val optBranches = branches.map(optimiseIfBranch)
+        val (optStmts, optFinal) = optimiseBlock(elseB.statements, elseB.finalExpr)
+        IfExpr(optBranches, Block(optStmts, optFinal))
 
       case other => other
     }
@@ -119,19 +157,11 @@ object optimiser {
           case Assign(_, _) =>
             (acc, live)
 
-          case _ =>
-            (stmt :: acc, live ++ getUsedStmt(stmt))
+          case Func(_, _, _) =>
+            (stmt :: acc, live) // simplistic; doesn't look inside func bodies for liveness
         }
       }
     rev
-  }
-
-  private def getUsedStmt(s: Stmt): Set[String] = s match {
-    case Assign(_, e) => getUsed(e)
-    case ExprStmt(e)  => getUsed(e)
-    case Func(_, p, b) =>
-      (b.statements.flatMap(getUsedStmt).toSet ++
-        getUsed(b.finalExpr)) -- p.toSet
   }
 
   private def getUsed(e: Expr): Set[String] = e match {
@@ -146,12 +176,15 @@ object optimiser {
     case Sum(i)        => getUsed(i)
     case Prod(i)       => getUsed(i)
     case Block(stmts, f) =>
-      stmts.flatMap(getUsedStmt).toSet ++ getUsed(f)
-    case IfExpr(b, c, t, e) =>
-      b.flatMap(x => getUsed(x.expr)).toSet ++
-        getUsed(c) ++
-        getUsed(t) ++
-        getUsed(e)
+      stmts.flatMap {
+        case Assign(_, e) => getUsed(e)
+        case Func(_, _, _) => Set.empty[String]
+      }.toSet ++ getUsed(f)
+    case IfExpr(branches, elseB) =>
+      branches.flatMap(b => b.bindings.flatMap(x => getUsed(x.expr)) ++ getUsed(b.condition) ++ getUsed(b.body)).toSet ++
+        getUsed(elseB)
+    case IfBranch(bindings, cond, body) =>
+      bindings.flatMap(x => getUsed(x.expr)).toSet ++ getUsed(cond) ++ getUsed(body)
     case _ => Set.empty
   }
 }

@@ -53,15 +53,32 @@ object scopeChecker {
         checkExpr(finalExpr)
         upLayer()
 
-      case IfExpr(bindings, cond, thenB, elseB) =>
+      case IfExpr(branches, elseB) =>
+        downLayer()
+        
+        branches.foreach { branch =>
+          branch.bindings.foreach { b =>
+            checkExpr(b.expr)
+            declareVar(b.name)
+          }
+        }
+        
+        branches.foreach { branch =>
+          checkExpr(branch.condition)
+          checkExpr(branch.body)
+        }
+        
+        checkExpr(elseB)
+        upLayer()
+
+      case IfBranch(bindings, cond, body) =>
         downLayer()
         bindings.foreach { b =>
           checkExpr(b.expr)
           declareVar(b.name)
         }
         checkExpr(cond)
-        checkExpr(thenB)
-        checkExpr(elseB)
+        checkExpr(body)
         upLayer()
 
       case IntLiteral(_) | CustomDist(_) => ()
@@ -72,9 +89,6 @@ object scopeChecker {
       case Assign(name, expr) =>
         checkExpr(expr)
         declareVar(name)
-
-      case ExprStmt(expr) =>
-        checkExpr(expr)
 
       case Func(name, params, body) =>
         downLayer()
@@ -94,10 +108,16 @@ object scopeChecker {
     }
 
     program match {
-      case Program(stmts) =>
+      case Program(topLevel) =>
         downLayer()
-        stmts.foreach { case f: Func => declareFunc(f.name); case _ => }
-        stmts.foreach(checkStmt)
+        topLevel.foreach { 
+          case Left(f: Func) => declareFunc(f.name)
+          case _ => 
+        }
+        topLevel.foreach {
+          case Left(stmt) => checkStmt(stmt)
+          case Right(expr) => checkExpr(expr)
+        }
         upLayer()
     }
 

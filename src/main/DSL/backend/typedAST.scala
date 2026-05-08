@@ -27,10 +27,14 @@ object typedAST {
     ty: DistTy
   ) extends TyExpr
 
-  case class TyIfExpr(
+  case class TyIfBranch(
     bindings: List[RollBinding],
     condition: TyExpr,
-    thenBranch: TyBlock,
+    body: TyBlock
+  )
+
+  case class TyIfExpr(
+    branches: List[TyIfBranch],
     elseBranch: TyBlock,
     ty: DistTy
   ) extends TyExpr

@@ -12,7 +12,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
    * and verify the resulting distribution.
    */
   def assertDist(expr: Expr)(expected: (Int, Double)*): Unit = {
-    val prog = Program(List(ExprStmt(expr)))
+    val prog = Program(List(Right(expr)))
     val dists = interpreter.interpretProgram(prog)
     val dist = dists.head
     val expMap = expected.toMap
@@ -26,8 +26,8 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   "Interpreter with variables" should "evaluate assignments and identifier references" in {
     val prog = Program(
       List(
-        Assign("x", IntLiteral(1)),
-        ExprStmt(Sum(Add(Ident("x"), IntLiteral(2))))
+        Left(Assign("x", IntLiteral(1))),
+        Right(Sum(Add(Ident("x"), IntLiteral(2))))
       )
     )
 
@@ -39,9 +39,9 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   it should "support dice and multiple assignments" in {
     val prog = Program(
       List(
-        Assign("x", Dice(IntLiteral(1), IntLiteral(6))),
-        Assign("y", IntLiteral(5)),
-        ExprStmt(Sum(Add(Ident("x"), Ident("y"))))
+        Left(Assign("x", Dice(IntLiteral(1), IntLiteral(6)))),
+        Left(Assign("y", IntLiteral(5))),
+        Right(Sum(Add(Ident("x"), Ident("y"))))
       )
     )
 
@@ -55,8 +55,8 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   it should "produce one distribution per expression statement" in {
     val prog = Program(
       List(
-        ExprStmt(Sum(IntLiteral(1))),
-        ExprStmt(Sum(IntLiteral(2)))
+        Right(Sum(IntLiteral(1))),
+        Right(Sum(IntLiteral(2)))
       )
     )
 
@@ -69,7 +69,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   it should "fail on use of unbound identifiers" in {
     val prog = Program(
       List(
-        ExprStmt(Sum(Ident("x")))
+        Right(Sum(Ident("x")))
       )
     )
 
@@ -88,7 +88,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   }
 
   it should "interpret 2d6 with correct sum distribution" in {
-    val prog = Program(List(ExprStmt(Sum(Dice(IntLiteral(2), IntLiteral(6))))))
+    val prog = Program(List(Right(Sum(Dice(IntLiteral(2), IntLiteral(6))))))
     val d = interpreter.interpretProgram(prog).head
     d(2) shouldBe (1.0 / 36) +- 1e-9   // 1+1
     d(7) shouldBe (6.0 / 36) +- 1e-9   // peak
@@ -102,7 +102,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   }
 
   it should "interpret mixed expression 2d6 + 5" in {
-    val prog = Program(List(ExprStmt(Sum(Add(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(5))))))
+    val prog = Program(List(Right(Sum(Add(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(5))))))
     val d = interpreter.interpretProgram(prog).head
     d.keySet shouldEqual (7 to 17).toSet  // 2+5 .. 12+5
     d(7) shouldBe (1.0 / 36) +- 1e-9
@@ -116,7 +116,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   }
 
   it should "interpret 2d6 as product distribution (1*1..6*6)" in {
-    val prog = Program(List(ExprStmt(Prod(Dice(IntLiteral(2), IntLiteral(6))))))
+    val prog = Program(List(Right(Prod(Dice(IntLiteral(2), IntLiteral(6))))))
     val d = interpreter.interpretProgram(prog).head
     d.keySet shouldEqual Set(1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 30, 36)
     d(1) shouldBe (1.0 / 36) +- 1e-9   // 1*1
@@ -126,15 +126,15 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   }
 
   it should "interpret prod(2d6) * 2 as scaling product distribution" in {
-    val prog = Program(List(ExprStmt(Prod(Mul(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(2))))))
+    val prog = Program(List(Right(Prod(Mul(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(2))))))
     val d = interpreter.interpretProgram(prog).head
     d.values.sum shouldBe 1.0 +- 1e-9
     d.keySet shouldEqual Set(2, 4, 6, 8, 10, 12, 16, 18, 20, 24, 30, 32, 36, 40, 48, 50, 60, 72)
   }
 
   it should "interpret nested sum(prod(2d6)) as product then identity" in {
-    val progProd = Program(List(ExprStmt(Prod(Dice(IntLiteral(2), IntLiteral(6))))))
-    val progSumProd = Program(List(ExprStmt(Sum(Prod(Dice(IntLiteral(2), IntLiteral(6)))))))
+    val progProd = Program(List(Right(Prod(Dice(IntLiteral(2), IntLiteral(6))))))
+    val progSumProd = Program(List(Right(Sum(Prod(Dice(IntLiteral(2), IntLiteral(6)))))))
     
     val prodOnly = interpreter.interpretProgram(progProd).head
     val viaSum = interpreter.interpretProgram(progSumProd).head

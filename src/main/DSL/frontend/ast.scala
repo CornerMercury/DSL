@@ -24,18 +24,23 @@ object AST {
   // Block is now an expression
   case class Block(statements: List[Stmt], finalExpr: Expr) extends Expr
 
-  // Expression-level if
-  case class IfExpr(
+  // Branch helper for if/elif
+  case class IfBranch(
     bindings: List[RollBinding],
     condition: Expr,
-    thenBranch: Block,
+    body: Block
+  ) extends AstNode
+
+  // Expression-level if
+  case class IfExpr(
+    branches: List[IfBranch],
     elseBranch: Block
   ) extends Expr
 
   sealed trait Stmt extends AstNode
   case class Assign(name: String, expr: Expr) extends Stmt
-  case class ExprStmt(expr: Expr) extends Stmt
   case class Func(name: String, params: List[String], body: Block) extends Stmt
 
-  case class Program(stmts: List[Stmt]) extends AstNode
+  // Program now holds Either[Stmt, Expr] to distinguish top-level prints from definitions
+  case class Program(topLevel: List[Either[Stmt, Expr]]) extends AstNode
 }

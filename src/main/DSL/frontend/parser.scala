@@ -21,17 +21,17 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
-    case _: Sum | _: Prod => e
-    case _                => Sum(e)
+    case _: Sum | _: Prod | _: IfExpr => e
+    case _                             => Sum(e)
   }
 
   private lazy val parser: Parsley[Program] = fully(program)
 
   private lazy val program: Parsley[Program] =
-    some(stmt <~ option(";")).map(Program.apply)
+    some(topLevelItem <~ option(";")).map(Program.apply)
 
-  private lazy val stmt: Parsley[Stmt] =
-    assignStmt <|> funcDecl <|> ifExprStmt <|> exprStmt
+  private lazy val topLevelItem: Parsley[Either[Stmt, Expr]] =
+    funcDecl.map(Left(_)) <|> assignStmt.map(Left(_)) <|> expr.map(e => Right(wrapInSumIfNeeded(e)))
 
   private lazy val assignStmt: Parsley[Assign] =
     (atomic(identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
@@ -43,11 +43,24 @@ object parser {
       }
     }
 
-  /** logic for { stmt; expr } blocks used in funcs and ifs. 
-    * Enforces that the final item is an expression and no statements trail it.
-    */
+  /** logic for { stmt; expr } blocks used in funcs and ifs. */
   private lazy val block: Parsley[Block] = 
-    ("{" ~> many(atomic(stmt <~ ";")) <~> expr <~ "}").map(Block.apply)
+    ("{" ~> many(blockItem <~ option(";")) <~ "}").map { items =>
+      if (items.isEmpty) {
+        Block(Nil, IntLiteral(0))
+      } else {
+        val init = items.dropRight(1).collect { case s: Stmt => s }
+        val last = items.last match {
+          case e: Expr => e
+          case Assign(name, e) => e 
+          case Func(_, _, _) => IntLiteral(0) 
+        }
+        Block(init, last)
+      }
+    }
+
+  private lazy val blockItem: Parsley[AstNode] =
+    funcDecl <|> assignStmt <|> expr
 
   private val rollOp = char('~')
 
@@ -55,46 +68,38 @@ object parser {
   private lazy val rollBinding: Parsley[RollBinding] =
     (atomic(identifier <~ "=" <~ rollOp) <~> expr).map { case (id, e) => RollBinding(id, e) }
 
-  private lazy val ifBranchHead: Parsley[(List[RollBinding], Expr)] =
-    many(atomic(rollBinding <~ ";")) <~> expr
-
-  private lazy val ifStmt: Parsley[IfExpr] = {
-    val ifPart = ("if" ~> ifBranchHead <~> block).map { 
-      case ((binds, cond), body) => (binds, cond, body) 
-    }
-    val elifPart = ("elif" ~> ifBranchHead <~> block).map { 
-      case ((binds, cond), body) => (binds, cond, body) 
-    }
+  private lazy val ifExpr: Parsley[IfExpr] = {
+    val ifPart = 
+      ("if" ~> many(atomic(rollBinding <~ ";"))).flatMap { binds =>
+        expr.flatMap { cond =>
+          block.map { body => IfBranch(binds, cond, body) }
+        }
+      }
+      
+    val elifPart = 
+      ("elif" ~> many(atomic(rollBinding <~ ";"))).flatMap { binds =>
+        expr.flatMap { cond =>
+          block.map { body => IfBranch(binds, cond, body) }
+        }
+      }
+      
     val elsePart = "else" ~> block
     
-    // Use flatMap to sequence without losing types to the <~> operator
-    ifPart.flatMap { case (firstBind, firstCond, firstBody) =>
+    ifPart.flatMap { firstBranch =>
       many(elifPart).flatMap { elifs =>
         elsePart.map { elseBody =>
-          val elseBlock = elifs.foldRight(elseBody) { case ((binds, cond, body), acc) =>
-            Block(List(), IfExpr(binds, cond, body, acc))
-          }
-          IfExpr(firstBind, firstCond, firstBody, elseBlock)
+          IfExpr(firstBranch :: elifs, elseBody)
         }
       }
     }
   }
-
-  // Wraps the IfExpr into an ExprStmt so it can be used seamlessly as a statement in blocks.
-  // Does NOT apply Sum() because IfExpr is not a simple expression.
-  private lazy val ifExprStmt: Parsley[ExprStmt] = ifStmt.map(ExprStmt.apply)
-
-  private lazy val exprStmt: Parsley[ExprStmt] =
-    expr.map(e => ExprStmt(wrapInSumIfNeeded(e)))
 
   /** Expressions */
   
   private val diceOp = char('d')
 
   private lazy val expr: Parsley[Expr] = precedence[Expr](term)(
-    // Comparison layer
     Ops(InfixL)("==" #> Eq.apply),
-    // Addition layer
     Ops(InfixL)("+" #> Add.apply, "-" #> Sub.apply)
   )
 
@@ -103,10 +108,10 @@ object parser {
     Ops(InfixL)("*" #> Mul.apply, "/" #> Div.apply)
   )
 
-  /** Atoms */
-
+  /** Atoms - ifExpr MUST come before customDistLiteral to prevent { being consumed by dist parser */
   private lazy val atom: Parsley[Expr] = 
-    literal <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
+    literal <|> ifExpr <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> 
+    atomic(prefixDice) <|> funcCall <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = 
     integer.map(IntLiteral.apply)

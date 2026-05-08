@@ -1,8 +1,7 @@
 func f(x, n) {
-    if n == 0 {
+    if v = ~x; n == 0 {
         0
-    }
-    if v = ~x; v == 6 {
+    } elif v == 6 {
         f(x, n - 1) + v
     } else {
         v

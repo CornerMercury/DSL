@@ -14,18 +14,19 @@ object interpreter {
   ): List[Distribution] = {
 
     val funcEnv =
-      program.stmts.collect { case f: Func => f.name -> f }.toMap
+      program.topLevel.collect { case Left(f: Func) => f.name -> f }.toMap
 
-    // We must fold over the statements to correctly thread the environment
-    val (_, results) = program.stmts.foldLeft((Map.empty[String, Distribution], List.empty[Distribution])) {
-      case ((env, acc), Assign(name, expr)) =>
+    val (_, results) = program.topLevel.foldLeft((Map.empty[String, Distribution], List.empty[Distribution])) {
+      case ((env, acc), Left(Assign(name, expr))) =>
         val value = eval(typer.annotate(expr), env, funcEnv, sem, DiceMode.Sum)
         (env.updated(name, value), acc)
-      case ((env, acc), ExprStmt(expr)) =>
+        
+      case ((env, acc), Left(Func(_, _, _))) =>
+        (env, acc) // Functions are already registered in funcEnv
+
+      case ((env, acc), Right(expr)) =>
         val value = eval(typer.annotate(expr), env, funcEnv, sem, DiceMode.Sum)
         (env, acc :+ value)
-      case ((env, acc), Func(_, _, _)) =>
-        (env, acc)
     }
 
     results
@@ -55,8 +56,7 @@ object interpreter {
         throw new IllegalArgumentException(s"Function ${func.name} expects ${func.params.size} arguments, got ${args.size}")
       }
 
-      val evaluatedArgs =
-        args.map(eval(_, env, funcEnv, sem, mode))
+      val evaluatedArgs = args.map(eval(_, env, funcEnv, sem, mode))
       val newEnv = env ++ func.params.zip(evaluatedArgs)
       eval(typer.annotate(func.body), newEnv, funcEnv, sem, mode)
 
@@ -66,30 +66,41 @@ object interpreter {
         case Assign(name, e) =>
           val value = eval(typer.annotate(e), currentEnv, funcEnv, sem, mode)
           currentEnv = currentEnv.updated(name, value)
-        case _ => ()
+        case Func(_, _, _) => () // Nested functions not supported in blocks for now, ignore
       }
       eval(finalExpr, currentEnv, funcEnv, sem, mode)
 
-    case TyIfExpr(bindings, cond, thenB, elseB, _) =>
-      val enumerated =
-        enumerateBindings(bindings, env, funcEnv, sem, mode)
+    case TyIfExpr(branches, elseB, _) =>
+      val allBindings = branches.flatMap(_.bindings)
+      val enumerated = enumerateBindings(allBindings, env, funcEnv, sem, mode)
 
       var result: Distribution = Map.empty
 
       for ((bindEnv, weight) <- enumerated) {
-        val condDist = eval(cond, bindEnv, funcEnv, sem, mode)
-        val isTrue = condDist.getOrElse(1, 0.0) > 0.999999
+        var branchTaken = false
 
-        val branch =
-          if (isTrue)
-            eval(thenB, bindEnv, funcEnv, sem, mode)
-          else
-            eval(elseB, bindEnv, funcEnv, sem, mode)
+        for (branch <- branches if !branchTaken) {
+          val condDist = eval(branch.condition, bindEnv, funcEnv, sem, mode)
+          val pTrue = condDist.getOrElse(1, 0.0)
+          val pFalse = condDist.getOrElse(0, 0.0)
 
-        val scaled = MathOps.scale(branch, weight)
-        result =
-          if (result.isEmpty) scaled
-          else MathOps.merge(result, scaled)
+          if (pTrue > 0.0) {
+            val res = eval(branch.body, bindEnv, funcEnv, sem, mode)
+            result = MathOps.merge(result, MathOps.scale(res, pTrue * weight))
+          }
+
+          if (pFalse > 0.0 && pTrue < 1.0) {
+            // Condition evaluates to false with some probability -> move on to the next elif/else
+          } else if (pTrue > 0.0) {
+            // Condition is absolutely true -> short-circuit the remaining branches
+            branchTaken = true
+          }
+        }
+
+        if (!branchTaken) {
+          val elseResult = eval(elseB, bindEnv, funcEnv, sem, mode)
+          result = MathOps.merge(result, MathOps.scale(elseResult, weight))
+        }
       }
 
       result

@@ -11,8 +11,8 @@ class IdentifiersAssignmentsSpec extends ParserSpecHelper {
   "Assignments" should "parse a simple program with a final expression" in {
     val expected: AstNode = Program(
       List(
-        Assign("x", IntLiteral(1)),
-        ExprStmt(Sum(Add(Ident("x"), IntLiteral(2))))
+        Left(Assign("x", IntLiteral(1))),
+        Right(Sum(Add(Ident("x"), IntLiteral(2))))
       )
     )
     assertParse("x = 1; x + 2", expected)
@@ -21,9 +21,9 @@ class IdentifiersAssignmentsSpec extends ParserSpecHelper {
   it should "parse multiple assignments before the final expression" in {
     val expected: AstNode = Program(
       List(
-        Assign("x", Dice(IntLiteral(1), IntLiteral(6))),
-        Assign("y", IntLiteral(5)),
-        ExprStmt(Sum(Add(Ident("x"), Ident("y"))))
+        Left(Assign("x", Dice(IntLiteral(1), IntLiteral(6)))),
+        Left(Assign("y", IntLiteral(5))),
+        Right(Sum(Add(Ident("x"), Ident("y"))))
       ),
     )
     assertParse("x = d6; y = 5; x + y", expected)

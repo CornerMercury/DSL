@@ -6,10 +6,10 @@ class IfSpec extends ParserSpecHelper {
 
   "If statements" should "parse a basic if else" in {
     val expected = Program(List(
-      ExprStmt(IfExpr(
-        bindings = Nil,
-        condition = Ident("x"),
-        thenBranch = Block(Nil, IntLiteral(1)),
+      Right(IfExpr(
+        branches = List(
+          IfBranch(Nil, Ident("x"), Block(Nil, IntLiteral(1)))
+        ),
         elseBranch = Block(Nil, IntLiteral(0))
       ))
     ))
@@ -18,10 +18,14 @@ class IfSpec extends ParserSpecHelper {
 
   it should "parse an if with roll bindings" in {
     val expected = Program(List(
-      ExprStmt(IfExpr(
-        bindings = List(RollBinding("v", Ident("x"))),
-        condition = Eq(Ident("v"), IntLiteral(6)),
-        thenBranch = Block(Nil, Ident("v")),
+      Right(IfExpr(
+        branches = List(
+          IfBranch(
+            bindings = List(RollBinding("v", Ident("x"))),
+            condition = Eq(Ident("v"), IntLiteral(6)),
+            body = Block(Nil, Ident("v"))
+          )
+        ),
         elseBranch = Block(Nil, IntLiteral(0))
       ))
     ))
@@ -30,16 +34,20 @@ class IfSpec extends ParserSpecHelper {
 
   it should "parse an if-elif-else with multiple bindings" in {
     val expected = Program(List(
-      ExprStmt(IfExpr(
-        bindings = List(RollBinding("v", Ident("x")), RollBinding("w", Ident("y"))),
-        condition = Eq(Ident("v"), Ident("w")),
-        thenBranch = Block(List(Assign("a", IntLiteral(10))), IntLiteral(10)),
-        elseBranch = Block(Nil, IfExpr(
-          bindings = Nil,
-          condition = Eq(Ident("x"), IntLiteral(2)),
-          thenBranch = Block(List(Assign("a", IntLiteral(20))), IntLiteral(20)),
-          elseBranch = Block(List(Assign("a", IntLiteral(0))), IntLiteral(0))
-        ))
+      Right(IfExpr(
+        branches = List(
+          IfBranch(
+            bindings = List(RollBinding("v", Ident("x")), RollBinding("w", Ident("y"))),
+            condition = Eq(Ident("v"), Ident("w")),
+            body = Block(List(Assign("a", IntLiteral(10))), Ident("a"))
+          ),
+          IfBranch(
+            bindings = Nil,
+            condition = Eq(Ident("x"), IntLiteral(2)),
+            body = Block(List(Assign("a", IntLiteral(20))), Ident("a"))
+          )
+        ),
+        elseBranch = Block(List(Assign("a", IntLiteral(0))), Ident("a"))
       ))
     ))
     assertParse(
