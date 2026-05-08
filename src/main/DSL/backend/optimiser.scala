@@ -7,11 +7,13 @@ object optimiser {
   def optimise(program: Program): Program =
     Program(optimiseTopLevel(program.topLevel))
 
-  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] =
-    topLevel.map {
+  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] = {
+    val optimised = topLevel.map {
       case Left(stmt) => Left(optimiseStmt(stmt))
       case Right(expr) => Right(optimiseExpr(expr, Map.empty))
     }
+    eliminateDeadTopLevelStores(optimised)
+  }
 
   private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
     val optStmts = eliminateDeadStores(propagateConstants(stmts))
@@ -41,16 +43,19 @@ object optimiser {
     finalStmts
   }
 
+  // Helper to find all variables assigned inside a block
   private def assignedVars(block: Block): Set[String] = {
     block.statements.collect {
       case Assign(name, _) => name
     }.toSet ++ assignedVarsExpr(block.finalExpr)
   }
 
+  // Helper to find all variables assigned inside an IfBranch
   private def assignedVarsBranch(branch: IfBranch): Set[String] = {
     branch.bindings.map(_.name).toSet ++ assignedVarsExpr(branch.condition) ++ assignedVars(branch.body)
   }
 
+  // Helper to find all variables assigned inside an expression (like IfExpr)
   private def assignedVarsExpr(expr: Expr): Set[String] = expr match {
     case Block(stmts, finalExpr) =>
       stmts.collect { case Assign(name, _) => name }.toSet ++ assignedVarsExpr(finalExpr)
@@ -68,10 +73,29 @@ object optimiser {
     case _ => Set.empty
   }
 
-  private def optimiseIfBranch(branch: IfBranch): IfBranch = {
-    val optBinds = branch.bindings.map(b => b.copy(expr = optimiseExpr(b.expr, Map.empty)))
-    val optCond  = optimiseExpr(branch.condition, Map.empty)
-    val (optStmts, optFinal) = optimiseBlock(branch.body.statements, branch.body.finalExpr)
+  /**
+   * Removes any RollBinding whose variable is never used ANYWHERE in the 
+   * entire IfExpr (including other branches and the else block).
+   */
+  private def removeUnusedBindings(branch: IfBranch, entireIfExpr: IfExpr): IfBranch = {
+    if (branch.bindings.isEmpty) return branch
+
+    // A binding is only dead if its variable is not used anywhere in the whole if expression
+    val usedInIfExpr = getUsed(entireIfExpr)
+
+    val filteredBinds = branch.bindings.filter(b => usedInIfExpr.contains(b.name))
+
+    branch.copy(bindings = filteredBinds)
+  }
+
+  private def optimiseIfBranch(branch: IfBranch, entireIfExpr: IfExpr): IfBranch = {
+    // 1. Remove unused bindings before optimizing the expressions
+    val cleanedBranch = removeUnusedBindings(branch, entireIfExpr)
+    
+    // 2. Optimize the remaining bindings, condition, and body
+    val optBinds = cleanedBranch.bindings.map(b => b.copy(expr = optimiseExpr(b.expr, Map.empty)))
+    val optCond  = optimiseExpr(cleanedBranch.condition, Map.empty)
+    val (optStmts, optFinal) = optimiseBlock(cleanedBranch.body.statements, cleanedBranch.body.finalExpr)
     IfBranch(optBinds, optCond, Block(optStmts, optFinal))
   }
 
@@ -107,7 +131,8 @@ object optimiser {
         Block(optStmts, optFinal)
 
       case IfExpr(branches, elseB) =>
-        val optBranches = branches.map(optimiseIfBranch)
+        // Pass the original IfExpr context so branches know what variables the entire structure uses
+        val optBranches = branches.map(b => optimiseIfBranch(b, IfExpr(branches, elseB)))
         val (optStmts, optFinal) = optimiseBlock(elseB.statements, elseB.finalExpr)
         IfExpr(optBranches, Block(optStmts, optFinal))
 
@@ -146,6 +171,21 @@ object optimiser {
       case _ => Eq(l, r)
     }
 
+  private def eliminateDeadTopLevelStores(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] = {
+    val (rev, _) =
+      topLevel.reverse.foldLeft((List.empty[Either[Stmt, Expr]], Set.empty[String])) {
+        case ((acc, live), item) => item match {
+          case Left(Assign(n, _)) if live.contains(n) =>
+            (item :: acc, (live - n) ++ getUsedTopLevelItem(item))
+          case Left(Assign(_, _)) =>
+            (acc, live) // Drop unused assignment
+          case _ =>
+            (item :: acc, live ++ getUsedTopLevelItem(item))
+        }
+      }
+    rev
+  }
+
   private def eliminateDeadStores(stmts: List[Stmt]): List[Stmt] = {
     val (rev, _) =
       stmts.reverse.foldLeft((List.empty[Stmt], Set.empty[String])) {
@@ -158,10 +198,21 @@ object optimiser {
             (acc, live)
 
           case Func(_, _, _) =>
-            (stmt :: acc, live) // simplistic; doesn't look inside func bodies for liveness
+            (stmt :: acc, live)
         }
       }
     rev
+  }
+
+  private def getUsedTopLevelItem(item: Either[Stmt, Expr]): Set[String] = item match {
+    case Left(stmt)  => getUsedStmt(stmt)
+    case Right(expr) => getUsed(expr)
+  }
+
+  private def getUsedStmt(s: Stmt): Set[String] = s match {
+    case Assign(_, e) => getUsed(e)
+    case Func(_, p, b) =>
+      (b.statements.flatMap(getUsedStmt).toSet ++ getUsed(b.finalExpr)) -- p.toSet
   }
 
   private def getUsed(e: Expr): Set[String] = e match {

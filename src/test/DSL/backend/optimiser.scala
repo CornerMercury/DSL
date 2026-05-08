@@ -1,193 +1,102 @@
-package DSL.backend
+package DSL
 
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 import DSL.frontend.AST._
+import DSL.backend.optimiser
 
-object optimiser {
+class OptimiserSpec extends AnyFlatSpec with Matchers {
 
-  def optimise(program: Program): Program =
-    Program(optimiseTopLevel(program.topLevel))
+  def optimize(items: Either[Stmt, Expr]*): List[Either[Stmt, Expr]] = {
+    val prog = Program(items.toList)
+    val Program(optimisedTopLevel) = optimiser.optimise(prog)
+    optimisedTopLevel
+  }
 
-  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] =
-    topLevel.map {
-      case Left(stmt) => Left(optimiseStmt(stmt))
-      case Right(expr) => Right(optimiseExpr(expr, Map.empty))
+  "Optimiser" should "fold basic arithmetic constants" in {
+    val ast = List(Right(Add(IntLiteral(1), IntLiteral(2))))
+    optimize(ast: _*) shouldBe List(Right(IntLiteral(3)))
+  }
+
+  it should "eliminate dead stores" in {
+    val ast = List(Left(Assign("x", IntLiteral(100))), Right(IntLiteral(50)))
+    optimize(ast: _*) shouldBe List(Right(IntLiteral(50)))
+  }
+
+  it should "optimise inside function bodies" in {
+    val ast = List(Left(Func("f", Nil, Block(Nil, Add(IntLiteral(5), IntLiteral(5))))))
+    optimize(ast: _*) match {
+      case List(Left(Func("f", Nil, Block(Nil, IntLiteral(10))))) => // success
+      case _ => fail("Not optimised")
     }
-
-  private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
-    val optStmts = eliminateDeadStores(propagateConstants(stmts))
-    val optFinal = optimiseExpr(finalExpr, Map.empty)
-    (optStmts, optFinal)
   }
 
-  private def propagateConstants(stmts: List[Stmt]): List[Stmt] = {
-    val (finalStmts, _) =
-      stmts.foldLeft((List.empty[Stmt], Map.empty[String, Expr])) {
-        case ((acc, env), stmt) => stmt match {
-
-          case Assign(name, expr) =>
-            val opt = optimiseExpr(expr, env)
-            val newEnv = opt match {
-              case l: IntLiteral => env + (name -> l)
-              case _             => env - name
-            }
-            (acc :+ Assign(name, opt), newEnv)
-
-          case Func(n, p, b) =>
-            val (optStmts, optFinal) = optimiseBlock(b.statements, b.finalExpr)
-            (acc :+ Func(n, p, Block(optStmts, optFinal)), env)
-        }
-      }
-
-    finalStmts
+  it should "optimise inside If statement branches" in {
+    val ast = List(
+      Right(IfExpr(
+        branches = List(
+          IfBranch(Nil, IntLiteral(1), Block(Nil, Add(IntLiteral(1), IntLiteral(2))))
+        ),
+        elseBranch = Block(Nil, IntLiteral(0))
+      ))
+    )
+    optimize(ast: _*) shouldBe List(
+      Right(IfExpr(
+        branches = List(
+          IfBranch(Nil, IntLiteral(1), Block(Nil, IntLiteral(3)))
+        ),
+        elseBranch = Block(Nil, IntLiteral(0))
+      ))
+    )
   }
 
-  // Helper to find all variables assigned inside a block
-  private def assignedVars(block: Block): Set[String] = {
-    block.statements.collect {
-      case Assign(name, _) => name
-    }.toSet ++ assignedVarsExpr(block.finalExpr)
+  it should "poison variables modified inside an if block" in {
+    val ast = List(
+      Left(Assign("x", IntLiteral(10))),
+      Right(IfExpr(
+        branches = List(
+          IfBranch(Nil, Dice(IntLiteral(1), IntLiteral(6)), Block(List(Assign("x", IntLiteral(20))), IntLiteral(1)))
+        ),
+        elseBranch = Block(Nil, IntLiteral(0))
+      )),
+      Right(Ident("x"))
+    )
+    optimize(ast: _*).last shouldBe Right(Ident("x"))
   }
 
-  // Helper to find all variables assigned inside an IfBranch
-  private def assignedVarsBranch(branch: IfBranch): Set[String] = {
-    branch.bindings.map(_.name).toSet ++ assignedVarsExpr(branch.condition) ++ assignedVars(branch.body)
-  }
+  it should "remove unused RollBindings in IfExpr branches" in {
+    // v is used in the condition, w is never used
+    val ast = List(
+      Right(IfExpr(
+        branches = List(
+          IfBranch(
+            bindings = List(
+              RollBinding("v", Dice(IntLiteral(1), IntLiteral(6))),
+              RollBinding("w", Dice(IntLiteral(1), IntLiteral(20))) // w is unused
+            ),
+            condition = Eq(Ident("v"), IntLiteral(6)),
+            body = Block(Nil, Ident("v"))
+          )
+        ),
+        elseBranch = Block(Nil, IntLiteral(0))
+      ))
+    )
 
-  // Helper to find all variables assigned inside an expression (like IfExpr)
-  private def assignedVarsExpr(expr: Expr): Set[String] = expr match {
-    case Block(stmts, finalExpr) =>
-      stmts.collect { case Assign(name, _) => name }.toSet ++ assignedVarsExpr(finalExpr)
-    case IfExpr(branches, elseB) =>
-      branches.flatMap(assignedVarsBranch).toSet ++ assignedVars(elseB)
-    case Dice(c, s) => assignedVarsExpr(c) ++ assignedVarsExpr(s)
-    case Sum(i)     => assignedVarsExpr(i)
-    case Prod(i)    => assignedVarsExpr(i)
-    case Add(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Sub(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Mul(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Div(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Eq(l, r)   => assignedVarsExpr(l) ++ assignedVarsExpr(r)
-    case Call(_, args) => args.flatMap(assignedVarsExpr).toSet
-    case _ => Set.empty
-  }
+    val expected = List(
+      Right(IfExpr(
+        branches = List(
+          IfBranch(
+            bindings = List(
+              RollBinding("v", Dice(IntLiteral(1), IntLiteral(6))) // w is correctly removed
+            ),
+            condition = Eq(Ident("v"), IntLiteral(6)),
+            body = Block(Nil, Ident("v"))
+          )
+        ),
+        elseBranch = Block(Nil, IntLiteral(0))
+      ))
+    )
 
-  private def optimiseIfBranch(branch: IfBranch): IfBranch = {
-    val optBinds = branch.bindings.map(b => b.copy(expr = optimiseExpr(b.expr, Map.empty)))
-    val optCond  = optimiseExpr(branch.condition, Map.empty)
-    val (optStmts, optFinal) = optimiseBlock(branch.body.statements, branch.body.finalExpr)
-    IfBranch(optBinds, optCond, Block(optStmts, optFinal))
-  }
-
-  private def optimiseStmt(stmt: Stmt): Stmt = stmt match {
-    case Assign(name, expr) => Assign(name, optimiseExpr(expr, Map.empty))
-    case Func(n, p, b) =>
-      val (optStmts, optFinal) = optimiseBlock(b.statements, b.finalExpr)
-      Func(n, p, Block(optStmts, optFinal))
-  }
-
-  private def optimiseExpr(node: Expr, env: Map[String, Expr]): Expr =
-    node match {
-
-      case Ident(n)      => env.getOrElse(n, node)
-
-      case Add(l, r)     => foldAdd(optimiseExpr(l, env), optimiseExpr(r, env))
-      case Sub(l, r)     => foldSub(optimiseExpr(l, env), optimiseExpr(r, env))
-      case Mul(l, r)     => foldMul(optimiseExpr(l, env), optimiseExpr(r, env))
-      case Div(l, r)     => foldDiv(optimiseExpr(l, env), optimiseExpr(r, env))
-      case Eq(l, r)      => foldEq(optimiseExpr(l, env), optimiseExpr(r, env))
-
-      case Call(n, args) =>
-        Call(n, args.map(optimiseExpr(_, env)))
-
-      case Dice(c, s) =>
-        Dice(optimiseExpr(c, env), optimiseExpr(s, env))
-
-      case Sum(i)  => Sum(optimiseExpr(i, env))
-      case Prod(i) => Prod(optimiseExpr(i, env))
-
-      case Block(stmts, finalExpr) =>
-        val (optStmts, optFinal) = optimiseBlock(stmts, finalExpr)
-        Block(optStmts, optFinal)
-
-      case IfExpr(branches, elseB) =>
-        val optBranches = branches.map(optimiseIfBranch)
-        val (optStmts, optFinal) = optimiseBlock(elseB.statements, elseB.finalExpr)
-        IfExpr(optBranches, Block(optStmts, optFinal))
-
-      case other => other
-    }
-
-  private def foldAdd(l: Expr, r: Expr) =
-    (l, r) match {
-      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a + b)
-      case _ => Add(l, r)
-    }
-
-  private def foldSub(l: Expr, r: Expr) =
-    (l, r) match {
-      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a - b)
-      case _ => Sub(l, r)
-    }
-
-  private def foldMul(l: Expr, r: Expr) =
-    (l, r) match {
-      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(a * b)
-      case _ => Mul(l, r)
-    }
-
-  private def foldDiv(l: Expr, r: Expr) =
-    (l, r) match {
-      case (IntLiteral(a), IntLiteral(b)) if b != 0 =>
-        IntLiteral(a / b)
-      case _ => Div(l, r)
-    }
-
-  private def foldEq(l: Expr, r: Expr) =
-    (l, r) match {
-      case (IntLiteral(a), IntLiteral(b)) =>
-        IntLiteral(if (a == b) 1 else 0)
-      case _ => Eq(l, r)
-    }
-
-  private def eliminateDeadStores(stmts: List[Stmt]): List[Stmt] = {
-    val (rev, _) =
-      stmts.reverse.foldLeft((List.empty[Stmt], Set.empty[String])) {
-        case ((acc, live), stmt) => stmt match {
-
-          case Assign(n, e) if live.contains(n) =>
-            (stmt :: acc, (live - n) ++ getUsed(e))
-
-          case Assign(_, _) =>
-            (acc, live)
-
-          case Func(_, _, _) =>
-            (stmt :: acc, live) // simplistic; doesn't look inside func bodies for liveness
-        }
-      }
-    rev
-  }
-
-  private def getUsed(e: Expr): Set[String] = e match {
-    case Ident(n)      => Set(n)
-    case Call(_, args) => args.flatMap(getUsed).toSet
-    case Add(l, r)     => getUsed(l) ++ getUsed(r)
-    case Sub(l, r)     => getUsed(l) ++ getUsed(r)
-    case Mul(l, r)     => getUsed(l) ++ getUsed(r)
-    case Div(l, r)     => getUsed(l) ++ getUsed(r)
-    case Eq(l, r)      => getUsed(l) ++ getUsed(r)
-    case Dice(c, s)    => getUsed(c) ++ getUsed(s)
-    case Sum(i)        => getUsed(i)
-    case Prod(i)       => getUsed(i)
-    case Block(stmts, f) =>
-      stmts.flatMap {
-        case Assign(_, e) => getUsed(e)
-        case Func(_, _, _) => Set.empty[String]
-      }.toSet ++ getUsed(f)
-    case IfExpr(branches, elseB) =>
-      branches.flatMap(b => b.bindings.flatMap(x => getUsed(x.expr)) ++ getUsed(b.condition) ++ getUsed(b.body)).toSet ++
-        getUsed(elseB)
-    case IfBranch(bindings, cond, body) =>
-      bindings.flatMap(x => getUsed(x.expr)).toSet ++ getUsed(cond) ++ getUsed(body)
-    case _ => Set.empty
+    optimize(ast: _*) shouldBe expected
   }
 }
