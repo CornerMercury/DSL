@@ -34,6 +34,14 @@ object typer {
       val tInner = infer(inner)
       TyUnary(UnaryOp.Prod, tInner, tInner.ty)
 
+    case Max(inner) =>
+      val tInner = infer(inner)
+      TyUnary(UnaryOp.Max, tInner, ScalarTy)
+
+    case Min(inner) =>
+      val tInner = infer(inner)
+      TyUnary(UnaryOp.Min, tInner, ScalarTy)
+
     case Dice(c, s) =>
       TyBinary(BinaryOp.Dice, infer(c), infer(s), GenericDistTy)
 

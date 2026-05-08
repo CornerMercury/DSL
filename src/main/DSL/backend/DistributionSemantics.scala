@@ -14,6 +14,9 @@ trait DistributionSemantics {
   def eq(d1: Distribution, d2: Distribution): Distribution
 
   def dice(count: Distribution, sides: Distribution, mode: DiceMode): Distribution
+
+  def max(d: Distribution): Distribution
+  def min(d: Distribution): Distribution
 }
 
 object DefaultDistributionSemantics extends DistributionSemantics {
@@ -49,4 +52,12 @@ object DefaultDistributionSemantics extends DistributionSemantics {
     mode: DiceMode
   ): Distribution =
     SmartConstructors.dice(count, sides, mode)
+
+  override def max(d: Distribution): Distribution =
+    if (d.isEmpty) Map(0 -> 1.0)
+    else Map(d.keys.max -> 1.0)
+
+  override def min(d: Distribution): Distribution =
+    if (d.isEmpty) Map(0 -> 1.0)
+    else Map(d.keys.min -> 1.0)
 }

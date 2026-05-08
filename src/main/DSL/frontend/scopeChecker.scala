@@ -41,6 +41,8 @@ object scopeChecker {
       case Dice(c, s) => checkExpr(c); checkExpr(s)
       case Sum(i)     => checkExpr(i)
       case Prod(i)    => checkExpr(i)
+      case Max(i)     => checkExpr(i)
+      case Min(i)     => checkExpr(i)
       case Add(l, r)  => checkExpr(l); checkExpr(r)
       case Sub(l, r)  => checkExpr(l); checkExpr(r)
       case Mul(l, r)  => checkExpr(l); checkExpr(r)

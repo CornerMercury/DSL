@@ -111,6 +111,14 @@ object interpreter {
     case TyUnary(UnaryOp.Prod, i, _) =>
       eval(i, env, funcEnv, sem, DiceMode.Prod)
 
+    case TyUnary(UnaryOp.Max, i, _) =>
+      val d = eval(i, env, funcEnv, sem, mode)
+      sem.max(d)
+
+    case TyUnary(UnaryOp.Min, i, _) =>
+      val d = eval(i, env, funcEnv, sem, mode)
+      sem.min(d)
+
     case TyBinary(op, l, r, _) =>
       val dL = eval(l, env, funcEnv, sem, mode)
       val dR = eval(r, env, funcEnv, sem, mode)

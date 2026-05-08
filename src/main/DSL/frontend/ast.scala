@@ -10,6 +10,8 @@ object AST {
   case class Dice(count: Expr, sides: Expr) extends Expr
   case class Sum(expr: Expr) extends Expr
   case class Prod(expr: Expr) extends Expr
+  case class Max(expr: Expr) extends Expr
+  case class Min(expr: Expr) extends Expr
   case class CustomDist(dist: Map[Int, Double]) extends Expr
 
   case class Add(left: Expr, right: Expr) extends Expr

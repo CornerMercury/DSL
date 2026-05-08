@@ -64,6 +64,8 @@ object optimiser {
     case Dice(c, s) => assignedVarsExpr(c) ++ assignedVarsExpr(s)
     case Sum(i)     => assignedVarsExpr(i)
     case Prod(i)    => assignedVarsExpr(i)
+    case Max(i)     => assignedVarsExpr(i)
+    case Min(i)     => assignedVarsExpr(i)
     case Add(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Sub(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Mul(l, r)  => assignedVarsExpr(l) ++ assignedVarsExpr(r)
@@ -125,6 +127,8 @@ object optimiser {
 
       case Sum(i)  => Sum(optimiseExpr(i, env))
       case Prod(i) => Prod(optimiseExpr(i, env))
+      case Max(i)  => Max(optimiseExpr(i, env))
+      case Min(i)  => Min(optimiseExpr(i, env))
 
       case Block(stmts, finalExpr) =>
         val (optStmts, optFinal) = optimiseBlock(stmts, finalExpr)
@@ -226,6 +230,8 @@ object optimiser {
     case Dice(c, s)    => getUsed(c) ++ getUsed(s)
     case Sum(i)        => getUsed(i)
     case Prod(i)       => getUsed(i)
+    case Max(i)        => getUsed(i)
+    case Min(i)        => getUsed(i)
     case Block(stmts, f) =>
       stmts.flatMap {
         case Assign(_, e) => getUsed(e)

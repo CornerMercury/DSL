@@ -6,7 +6,7 @@ object stdlib {
     |func explodeN(x, n) {
     |    if v = ~x; n == 0 {
     |       0
-    |    } elif v == 6 {
+    |    } elif v == max(x) {
     |        explodeN(x, n - 1) + v
     |    } else {
     |        v

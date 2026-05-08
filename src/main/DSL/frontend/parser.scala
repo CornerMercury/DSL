@@ -9,7 +9,7 @@ import parsley.combinator.{sepBy, some, option, many}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, funcKeyword}
+import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, funcKeyword}
 import DSL.frontend.AST._
 
 object parser {
@@ -21,7 +21,7 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
-    case _: Sum | _: Prod | _: IfExpr => e
+    case _: Sum | _: Prod | _: Max | _: Min | _: IfExpr => e
     case _                             => Sum(e)
   }
 
@@ -111,7 +111,7 @@ object parser {
   /** Atoms - ifExpr MUST come before customDistLiteral to prevent { being consumed by dist parser */
   private lazy val atom: Parsley[Expr] = 
     literal <|> ifExpr <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> 
-    atomic(prefixDice) <|> funcCall <|> identRef <|> parens
+    atomic(maxCall) <|> atomic(minCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = 
     integer.map(IntLiteral.apply)
@@ -134,6 +134,12 @@ object parser {
 
   private lazy val prodCall: Parsley[Prod] = 
     (prodKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Prod.apply)
+
+  private lazy val maxCall: Parsley[Max] = 
+    (maxKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Max.apply)
+
+  private lazy val minCall: Parsley[Min] = 
+    (minKeyword ~> (("(" ~> expr <~ ")") <|> term)).map(Min.apply)
 
   private lazy val prefixDice: Parsley[Dice] = 
     diceOp ~> atom.map(sides => Dice(IntLiteral(1), sides))
