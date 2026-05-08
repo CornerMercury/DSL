@@ -9,10 +9,21 @@ object typer {
   def annotate(expr: Expr): TyExpr = infer(expr)
 
   private def infer(expr: Expr): TyExpr = expr match {
+
     case Ident(name)      => TyIdent(name, UnknownTy)
     case IntLiteral(n)    => TyIntLiteral(n, ScalarTy)
-    case CustomDist(dist) => TyCustomDist(dist, semanticTypes.classify(dist))
+    case CustomDist(dist) => TyCustomDist(dist, classify(dist))
     case Call(name, args) => TyCall(name, args.map(infer), GenericDistTy)
+
+    case Block(stmts, finalExpr) =>
+      val tFinal = infer(finalExpr)
+      TyBlock(stmts, tFinal, tFinal.ty)
+
+    case IfExpr(bindings, cond, thenB, elseB) =>
+      val tCond = infer(cond)
+      val tThen = infer(thenB).asInstanceOf[TyBlock]
+      val tElse = infer(elseB).asInstanceOf[TyBlock]
+      TyIfExpr(bindings, tCond, tThen, tElse, tThen.ty)
 
     case Sum(inner) =>
       val tInner = infer(inner)
@@ -35,10 +46,9 @@ object typer {
   private def binary(l: Expr, r: Expr, op: BinaryOp): TyBinary = {
     val tL = infer(l)
     val tR = infer(r)
-    val resTy = (tL.ty, tR.ty) match {
-      case (ScalarTy, ScalarTy) => ScalarTy
-      case _ => GenericDistTy
-    }
+    val resTy =
+      if (tL.ty == ScalarTy && tR.ty == ScalarTy) ScalarTy
+      else GenericDistTy
     TyBinary(op, tL, tR, resTy)
   }
 }

@@ -1,12 +1,12 @@
 func f(x, n) {
     if n == 0 {
-        return 0
+        0
     }
     if v = ~x; v == 6 {
-        return f(x, n - 1) + v
+        f(x, n - 1) + v
     } else {
-        return v
+        v
     }
-}
+} 
 
-if 1 { 100 } else { 0 }
+f(d6, 10)

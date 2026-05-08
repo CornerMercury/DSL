@@ -10,9 +10,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   "Interpreter with functions" should "evaluate a parameterless function" in {
     val prog = Program(
       List(
-        Func("five", Nil, List(
-          Return(IntLiteral(5))
-        )),
+        Func("five", Nil, Block(Nil, IntLiteral(5))),
         // funcCall -> wrapped in Sum by parser
         ExprStmt(Sum(Call("five", Nil)))
       )
@@ -26,9 +24,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "evaluate a function with arguments" in {
     val prog = Program(
       List(
-        Func("addFunc", List("a", "b"), List(
-          Return(Add(Ident("a"), Ident("b")))
-        )),
+        Func("addFunc", List("a", "b"), Block(Nil, Add(Ident("a"), Ident("b")))),
         ExprStmt(Sum(Call("addFunc", List(IntLiteral(2), IntLiteral(3)))))
       )
     )
@@ -40,9 +36,9 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "evaluate a function with local assignments and dice" in {
     val prog = Program(
       List(
-        Func("rollPlus", List("bonus"), List(
-          Assign("r", Dice(IntLiteral(1), IntLiteral(6))),
-          Return(Add(Ident("r"), Ident("bonus")))
+        Func("rollPlus", List("bonus"), Block(
+          List(Assign("r", Dice(IntLiteral(1), IntLiteral(6)))),
+          Add(Ident("r"), Ident("bonus"))
         )),
         ExprStmt(Sum(Call("rollPlus", List(IntLiteral(4)))))
       )
@@ -54,29 +50,13 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
     d.values.sum shouldBe 1.0 +- 1e-9
   }
 
-  it should "short-circuit execution upon hitting a Return statement" in {
-    val prog = Program(
-      List(
-        Func("earlyRet", Nil, List(
-          Return(IntLiteral(10)),
-          Return(IntLiteral(20)) // Should not be reached/evaluated
-        )),
-        ExprStmt(Sum(Call("earlyRet", Nil)))
-      )
-    )
-
-    val dists = interpreter.interpretProgram(prog)
-    dists.head shouldEqual Map(10 -> 1.0)
-  }
-
   it should "maintain separate scopes for functions (shadowing)" in {
     val prog = Program(
       List(
         Assign("x", IntLiteral(100)),
-        Func("shadow", List("x"), List(
-          // Modifies local parameter 'x', not global 'x'
-          Assign("x", Add(Ident("x"), IntLiteral(1))),
-          Return(Ident("x"))
+        Func("shadow", List("x"), Block(
+          List(Assign("x", Add(Ident("x"), IntLiteral(1)))),
+          Ident("x")
         )),
         // Call shadow(5) -> returns 6
         ExprStmt(Sum(Call("shadow", List(IntLiteral(5))))),
@@ -94,12 +74,8 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "allow functions to call other functions" in {
     val prog = Program(
       List(
-        Func("double", List("x"), List(
-          Return(Mul(Ident("x"), IntLiteral(2)))
-        )),
-        Func("quadruple", List("x"), List(
-          Return(Call("double", List(Call("double", List(Ident("x"))))))
-        )),
+        Func("double", List("x"), Block(Nil, Mul(Ident("x"), IntLiteral(2)))),
+        Func("quadruple", List("x"), Block(Nil, Call("double", List(Call("double", List(Ident("x"))))))),
         ExprStmt(Sum(Call("quadruple", List(IntLiteral(3)))))
       )
     )
@@ -122,9 +98,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "fail if argument arity is mismatched" in {
     val prog = Program(
       List(
-        Func("needsTwo", List("a", "b"), List(
-          Return(IntLiteral(0))
-        )),
+        Func("needsTwo", List("a", "b"), Block(Nil, IntLiteral(0))),
         ExprStmt(Sum(Call("needsTwo", List(IntLiteral(1))))) // only 1 arg passed
       )
     )

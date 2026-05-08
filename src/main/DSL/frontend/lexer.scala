@@ -4,7 +4,7 @@ import parsley.Parsley
 import parsley.character.string
 import parsley.token.Lexer
 import parsley.token.predicate.Basic 
-import parsley.token.descriptions.numeric.{NumericDesc, ExponentDesc} // Added ExponentDesc
+import parsley.token.descriptions.numeric.{NumericDesc, ExponentDesc}
 import parsley.token.descriptions.{LexicalDesc, NameDesc, SymbolDesc, SpaceDesc}
 import parsley.token.descriptions.text.TextDesc
 
@@ -15,7 +15,7 @@ object lexer {
             identifierLetter = Basic(c => Character.isLetterOrDigit(c) || c == '_'),
         ),
         
-        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod", "func", "return")),
+        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod", "func")),
 
         NumericDesc.plain.copy(
             integerNumbersCanBeHexadecimal = false,
@@ -35,7 +35,6 @@ object lexer {
     val sumKeyword = lexer.lexeme(string("sum"))
     val prodKeyword = lexer.lexeme(string("prod"))
     val funcKeyword = lexer.lexeme(string("func"))
-    val returnKeyword = lexer.lexeme(string("return"))
 
     val identifier: Parsley[String] = lexer.lexeme.names.identifier
 

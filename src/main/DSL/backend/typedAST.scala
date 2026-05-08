@@ -1,19 +1,18 @@
 package DSL.backend
 
 import DSL.backend.DistTy
+import DSL.frontend.AST._
 
 object typedAST {
+
   sealed trait TyAstNode
-  
+
   sealed abstract class TyExpr extends TyAstNode {
     def ty: DistTy
   }
 
   enum UnaryOp { case Sum, Prod }
-
-  enum BinaryOp { 
-    case Dice, Add, Sub, Mul, Div, Eq
-  }
+  enum BinaryOp { case Dice, Add, Sub, Mul, Div, Eq }
 
   case class TyIntLiteral(value: Int, ty: DistTy) extends TyExpr
   case class TyIdent(name: String, ty: DistTy) extends TyExpr
@@ -21,4 +20,18 @@ object typedAST {
   case class TyCall(name: String, args: List[TyExpr], ty: DistTy) extends TyExpr
   case class TyUnary(op: UnaryOp, inner: TyExpr, ty: DistTy) extends TyExpr
   case class TyBinary(op: BinaryOp, left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
+
+  case class TyBlock(
+    statements: List[Stmt],
+    finalExpr: TyExpr,
+    ty: DistTy
+  ) extends TyExpr
+
+  case class TyIfExpr(
+    bindings: List[RollBinding],
+    condition: TyExpr,
+    thenBranch: TyBlock,
+    elseBranch: TyBlock,
+    ty: DistTy
+  ) extends TyExpr
 }
