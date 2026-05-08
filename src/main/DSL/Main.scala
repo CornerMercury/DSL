@@ -4,6 +4,7 @@ import java.io.File
 import scala.io.Source
 import parsley.{Success, Failure}
 import DSL.frontend.parser
+import DSL.frontend.stdlib
 import DSL.frontend.AST._
 import DSL.frontend.scopeChecker
 import DSL.backend.optimiser
@@ -58,8 +59,11 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
     case e: Exception => return (s"File Read Error: ${e.getMessage}", ExitCode.FileErr)
   }
 
+  // Prepend the standard library builtins
+  val fullInput = stdlib.source + "\n" + input
+
   // Pipeline: parse -> scope check -> optimise -> typing & interpreting
-  parser.parse(input) match {
+  parser.parse(fullInput) match {
     case Success(p: Program) =>
       // 1. Static Analysis
       val scopeErrors = scopeChecker.check(p)
