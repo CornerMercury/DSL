@@ -53,6 +53,10 @@ object scopeChecker {
       case Mul(l, r)  => checkExpr(l); checkExpr(r)
       case Div(l, r)  => checkExpr(l); checkExpr(r)
       case Eq(l, r)   => checkExpr(l); checkExpr(r)
+      case Lt(l, r)   => checkExpr(l); checkExpr(r)
+      case Le(l, r)   => checkExpr(l); checkExpr(r)
+      case Gt(l, r)   => checkExpr(l); checkExpr(r)
+      case Ge(l, r)   => checkExpr(l); checkExpr(r)
 
       case Block(stmts, finalExpr) =>
         downLayer()

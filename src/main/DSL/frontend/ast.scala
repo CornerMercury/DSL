@@ -20,6 +20,10 @@ object AST {
   case class Mul(left: Expr, right: Expr) extends Expr
   case class Div(left: Expr, right: Expr) extends Expr
   case class Eq(left: Expr, right: Expr) extends Expr
+  case class Lt(left: Expr, right: Expr) extends Expr
+  case class Le(left: Expr, right: Expr) extends Expr
+  case class Gt(left: Expr, right: Expr) extends Expr
+  case class Ge(left: Expr, right: Expr) extends Expr
 
   // Roll binding used inside if expression
   case class RollBinding(name: String, expr: Expr)

@@ -43,19 +43,16 @@ object optimiser {
     finalStmts
   }
 
-  // Helper to find all variables assigned inside a block
   private def assignedVars(block: Block): Set[String] = {
     block.statements.collect {
       case Assign(name, _) => name
     }.toSet ++ assignedVarsExpr(block.finalExpr)
   }
 
-  // Helper to find all variables assigned inside an IfBranch
   private def assignedVarsBranch(branch: IfBranch): Set[String] = {
     branch.bindings.map(_.name).toSet ++ assignedVarsExpr(branch.condition) ++ assignedVars(branch.body)
   }
 
-  // Helper to find all variables assigned inside an expression (like IfExpr)
   private def assignedVarsExpr(expr: Expr): Set[String] = expr match {
     case Block(stmts, finalExpr) =>
       stmts.collect { case Assign(name, _) => name }.toSet ++ assignedVarsExpr(finalExpr)
@@ -72,18 +69,17 @@ object optimiser {
     case Mul(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Div(l, r)     => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Eq(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Lt(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Le(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Gt(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
+    case Ge(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Call(_, args) => args.flatMap(assignedVarsExpr).toSet
     case _ => Set.empty
   }
 
-  /**
-   * Removes any RollBinding whose variable is never used ANYWHERE in the 
-   * entire IfExpr (including other branches and the else block).
-   */
   private def removeUnusedBindings(branch: IfBranch, entireIfExpr: IfExpr): IfBranch = {
     if (branch.bindings.isEmpty) return branch
 
-    // A binding is only dead if its variable is not used anywhere in the whole if expression
     val usedInIfExpr = getUsed(entireIfExpr)
 
     val filteredBinds = branch.bindings.filter(b => usedInIfExpr.contains(b.name))
@@ -92,10 +88,8 @@ object optimiser {
   }
 
   private def optimiseIfBranch(branch: IfBranch, entireIfExpr: IfExpr): IfBranch = {
-    // 1. Remove unused bindings before optimizing the expressions
     val cleanedBranch = removeUnusedBindings(branch, entireIfExpr)
     
-    // 2. Optimize the remaining bindings, condition, and body
     val optBinds = cleanedBranch.bindings.map(b => b.copy(expr = optimiseExpr(b.expr, Map.empty)))
     val optCond  = optimiseExpr(cleanedBranch.condition, Map.empty)
     val (optStmts, optFinal) = optimiseBlock(cleanedBranch.body.statements, cleanedBranch.body.finalExpr)
@@ -119,6 +113,10 @@ object optimiser {
       case Mul(l, r)     => foldMul(optimiseExpr(l, env), optimiseExpr(r, env))
       case Div(l, r)     => foldDiv(optimiseExpr(l, env), optimiseExpr(r, env))
       case Eq(l, r)      => foldEq(optimiseExpr(l, env), optimiseExpr(r, env))
+      case Lt(l, r)      => foldLt(optimiseExpr(l, env), optimiseExpr(r, env))
+      case Le(l, r)      => foldLe(optimiseExpr(l, env), optimiseExpr(r, env))
+      case Gt(l, r)      => foldGt(optimiseExpr(l, env), optimiseExpr(r, env))
+      case Ge(l, r)      => foldGe(optimiseExpr(l, env), optimiseExpr(r, env))
 
       case Call(n, args) =>
         Call(n, args.map(optimiseExpr(_, env)))
@@ -137,7 +135,6 @@ object optimiser {
         Block(optStmts, optFinal)
 
       case IfExpr(branches, elseB) =>
-        // Pass the original IfExpr context so branches know what variables the entire structure uses
         val optBranches = branches.map(b => optimiseIfBranch(b, IfExpr(branches, elseB)))
         val (optStmts, optFinal) = optimiseBlock(elseB.statements, elseB.finalExpr)
         IfExpr(optBranches, Block(optStmts, optFinal))
@@ -177,6 +174,30 @@ object optimiser {
       case _ => Eq(l, r)
     }
 
+  private def foldLt(l: Expr, r: Expr) =
+    (l, r) match {
+      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(if (a < b) 1 else 0)
+      case _ => Lt(l, r)
+    }
+
+  private def foldLe(l: Expr, r: Expr) =
+    (l, r) match {
+      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(if (a <= b) 1 else 0)
+      case _ => Le(l, r)
+    }
+
+  private def foldGt(l: Expr, r: Expr) =
+    (l, r) match {
+      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(if (a > b) 1 else 0)
+      case _ => Gt(l, r)
+    }
+
+  private def foldGe(l: Expr, r: Expr) =
+    (l, r) match {
+      case (IntLiteral(a), IntLiteral(b)) => IntLiteral(if (a >= b) 1 else 0)
+      case _ => Ge(l, r)
+    }
+
   private def eliminateDeadTopLevelStores(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] = {
     val (rev, _) =
       topLevel.reverse.foldLeft((List.empty[Either[Stmt, Expr]], Set.empty[String])) {
@@ -184,7 +205,7 @@ object optimiser {
           case Left(Assign(n, _)) if live.contains(n) =>
             (item :: acc, (live - n) ++ getUsedTopLevelItem(item))
           case Left(Assign(_, _)) =>
-            (acc, live) // Drop unused assignment
+            (acc, live)
           case _ =>
             (item :: acc, live ++ getUsedTopLevelItem(item))
         }
@@ -229,6 +250,10 @@ object optimiser {
     case Mul(l, r)     => getUsed(l) ++ getUsed(r)
     case Div(l, r)     => getUsed(l) ++ getUsed(r)
     case Eq(l, r)      => getUsed(l) ++ getUsed(r)
+    case Lt(l, r)      => getUsed(l) ++ getUsed(r)
+    case Le(l, r)      => getUsed(l) ++ getUsed(r)
+    case Gt(l, r)      => getUsed(l) ++ getUsed(r)
+    case Ge(l, r)      => getUsed(l) ++ getUsed(r)
     case Dice(c, s)    => getUsed(c) ++ getUsed(s)
     case Sum(i)        => getUsed(i)
     case Prod(i)       => getUsed(i)

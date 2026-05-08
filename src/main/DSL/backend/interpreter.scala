@@ -148,6 +148,10 @@ object interpreter {
         case BinaryOp.Mul  => sem.mul(dL, dR)
         case BinaryOp.Div  => sem.div(dL, dR)
         case BinaryOp.Eq   => sem.eq(dL, dR)
+        case BinaryOp.Lt   => sem.lt(dL, dR)
+        case BinaryOp.Le   => sem.le(dL, dR)
+        case BinaryOp.Gt   => sem.gt(dL, dR)
+        case BinaryOp.Ge   => sem.ge(dL, dR)
       }
   }
 

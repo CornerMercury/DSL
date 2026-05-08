@@ -8,6 +8,7 @@ import DSL.frontend.stdlib
 import DSL.frontend.AST._
 import DSL.frontend.scopeChecker
 import DSL.backend.optimiser
+import DSL.backend.typeChecker
 import DSL.backend.interpreter
 import DSL.backend.typedAST._
 import DSL.backend.{DistTy, ScalarTy, BinomialTy, UniformTy, GenericDistTy}
@@ -17,6 +18,7 @@ object ExitCode {
   val FileErr = 1
   val SyntaxErr = 100
   val ScopeErr = 101
+  val TypeErr = 102
 }
 
 @main
@@ -52,6 +54,11 @@ private def showTy(e: TyExpr): String = {
     case TyBinary(BinaryOp.Sub, l, r, t)  => s"(${showTy(l)}-${showTy(r)}):${tyName(t)}"
     case TyBinary(BinaryOp.Mul, l, r, t)  => s"(${showTy(l)}*${showTy(r)}):${tyName(t)}"
     case TyBinary(BinaryOp.Div, l, r, t)  => s"(${showTy(l)}/${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Eq, l, r, t)   => s"(${showTy(l)}==${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Lt, l, r, t)   => s"(${showTy(l)}<${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Le, l, r, t)   => s"(${showTy(l)}<=${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Gt, l, r, t)   => s"(${showTy(l)}>${showTy(r)}):${tyName(t)}"
+    case TyBinary(BinaryOp.Ge, l, r, t)   => s"(${showTy(l)}>=${showTy(r)}):${tyName(t)}"
   }
 }
 
@@ -65,10 +72,10 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
   // Prepend the standard library builtins
   val fullInput = stdlib.source + "\n" + input
 
-  // Pipeline: parse -> scope check -> optimise -> typing & interpreting
+  // Pipeline: parse -> scope check -> optimise -> type check -> interpreting
   parser.parse(fullInput) match {
     case Success(p: Program) =>
-      // 1. Static Analysis
+      // 1. Static Analysis: Scope
       val scopeErrors = scopeChecker.check(p)
       if (scopeErrors.nonEmpty) {
         val errorMsg = scopeErrors.map(e => s"  - $e").mkString("\n")
@@ -78,7 +85,14 @@ def compile(file: File, flags: Seq[String] = Seq.empty): (String, Int) = {
       // 2. Optimisation
       val optimised = optimiser.optimise(p)
 
-      // 3. Interpretation
+      // 3. Static Analysis: Types
+      val typeErrors = typeChecker.check(optimised)
+      if (typeErrors.nonEmpty) {
+        val errorMsg = typeErrors.map(e => s"  - $e").mkString("\n")
+        return (s"Type Errors Found:\n$errorMsg", ExitCode.TypeErr)
+      }
+
+      // 4. Interpretation
       try {
         val dists = interpreter.interpretProgram(optimised)
         val blocks = dists.zipWithIndex.map { case (dist, idx) =>

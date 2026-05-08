@@ -47,13 +47,25 @@ object typer {
       TyUnary(UnaryOp.Min, tInner, ScalarTy)
 
     case Dice(c, s) =>
-      TyBinary(BinaryOp.Dice, infer(c), infer(s), GenericDistTy)
+      val tC = infer(c)
+      val tS = infer(s)
+      val resTy = (tC, tS) match {
+        case (TyIntLiteral(1, _), TyIntLiteral(1, _))       => ScalarTy
+        case (TyIntLiteral(1, _), TyIntLiteral(sides, _)) if sides > 1 => UniformTy
+        case (TyIntLiteral(n, _), TyIntLiteral(_, _)) if n > 1 => GenericDistTy
+        case _                                              => GenericDistTy
+      }
+      TyBinary(BinaryOp.Dice, tC, tS, resTy)
 
     case Add(l, r) => binary(l, r, BinaryOp.Add)
     case Sub(l, r) => binary(l, r, BinaryOp.Sub)
     case Mul(l, r) => binary(l, r, BinaryOp.Mul)
     case Div(l, r) => binary(l, r, BinaryOp.Div)
     case Eq(l, r)  => binary(l, r, BinaryOp.Eq)
+    case Lt(l, r)  => binary(l, r, BinaryOp.Lt)
+    case Le(l, r)  => binary(l, r, BinaryOp.Le)
+    case Gt(l, r)  => binary(l, r, BinaryOp.Gt)
+    case Ge(l, r)  => binary(l, r, BinaryOp.Ge)
   }
 
   private def binary(l: Expr, r: Expr, op: BinaryOp): TyBinary = {

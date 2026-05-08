@@ -34,9 +34,6 @@ object parser {
     funcDecl.map(Left(_)) <|> assignStmt.map(Left(_)) <|> expr.map(e => Right(wrapInSumIfNeeded(e)))
 
   private lazy val assignStmt: Parsley[Assign] =
-    // Wrapping the entire assignment in `atomic` ensures that if it consumes "x ="
-    // but fails to parse the right-hand expression (e.g., for "x == 1"), it backtracks
-    // so that the `expr` parser can correctly handle it as an equality check.
     atomic((identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
 
   private lazy val funcDecl: Parsley[Func] =
@@ -102,7 +99,8 @@ object parser {
   private val diceOp = char('d')
 
   private lazy val expr: Parsley[Expr] = precedence[Expr](term)(
-    Ops(InfixL)("==" #> Eq.apply),
+    // <= and >= must be listed before < and > so Parsley matches them properly
+    Ops(InfixL)("==" #> Eq.apply, "<=" #> Le.apply, "<" #> Lt.apply, ">=" #> Ge.apply, ">" #> Gt.apply),
     Ops(InfixL)("+" #> Add.apply, "-" #> Sub.apply)
   )
 
