@@ -1,1 +1,1 @@
-keepLargest(50,70,d50)
+keepLargest(1,700,d700)

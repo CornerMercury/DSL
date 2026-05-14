@@ -12,48 +12,100 @@ object MathOps {
   def keepLargest(k: Int, n: Int, dieDist: Distribution): Distribution = {
     if (k <= 0) return Map(0 -> 1.0)
     if (n <= 0) return Map(0 -> 1.0)
+    
+    // OPTIMIZATION: If K=1, use the O(F) CDF method
+    // This is mathematically optimal and independent of N
+    if (k == 1) return keepHighestOne(n, dieDist)
+    
+    // Optimization: If we keep everything, just sum the dice
     if (k >= n) {
       return (1 until n).foldLeft(dieDist)((acc, _) => convolve(acc, dieDist, _ + _))
     }
 
-    val maxVal = dieDist.keys.max
-    val bitsPerDie = (32 - Integer.numberOfLeadingZeros(maxVal))
-    
-    // Heuristic: Greedy is only valid if we can pack k dice into a Long
-    if (k * bitsPerDie <= 60 && k < 20) { 
-       keepLargestGreedy(k, n, dieDist)
-    } else {
-       keepLargestDP(k, n, dieDist)
-    }
+    // Default to the robust DP method for K > 1
+    keepLargestDP(k, n, dieDist)
   }
 
-  // --- Method: Keep Largest (Robust DP with Conditional Probabilities) ---
+  // --- Optimized: Keep Highest 1 (CDF Method) ---
+  // Time Complexity: O(F log F) where F is the number of faces.
+  // This is effectively O(1) with respect to N (number of dice).
+  private def keepHighestOne(n: Int, dieDist: Distribution): Distribution = {
+    if (n == 0) return Map(0 -> 1.0)
+
+    // Sort faces so we can calculate cumulative probabilities
+    val faces = dieDist.keys.toSeq.sorted
+    val result = mutable.Map[Int, Double]()
+    
+    var cumProb = 0.0 // P(die <= current_face)
+    
+    for (face <- faces) {
+      val pFace = dieDist(face)
+      cumProb += pFace
+      
+      // P(One Die < current_face) = P(One Die <= current_face) - P(current_face)
+      val prevCumProb = cumProb - pFace
+      
+      // P(Max == face) = P(All <= face)^N - P(All < face)^N
+      val pMax = math.pow(cumProb, n) - math.pow(prevCumProb, n)
+      
+      if (pMax > 0.0) {
+        result(face) = pMax
+      }
+    }
+    result.toMap
+  }
+
+  // --- Optimized: Keep Lowest 1 (Survival Function Method) ---
+  private def keepLowestOne(n: Int, dieDist: Distribution): Distribution = {
+    if (n == 0) return Map(0 -> 1.0)
+
+    // Sort descending for Lowest logic
+    val faces = dieDist.keys.toSeq.sorted(Ordering[Int].reverse)
+    val result = mutable.Map[Int, Double]()
+    
+    var cumProb = 0.0 // P(die >= current_face)
+    
+    for (face <- faces) {
+      val pFace = dieDist(face)
+      cumProb += pFace
+      
+      // P(One Die > current_face)
+      val prevCumProb = cumProb - pFace
+      
+      // P(Min == face) = P(All >= face)^N - P(All > face)^N
+      val pMin = math.pow(cumProb, n) - math.pow(prevCumProb, n)
+      
+      if (pMin > 0.0) {
+        result(face) = pMin
+      }
+    }
+    result.toMap
+  }
+
+  // --- Method: Keep Largest (Double Buffered DP with Conditional Probabilities) ---
+  // Best for: K > 1
   private def keepLargestDP(k: Int, n: Int, dieDist: Distribution): Distribution = {
-    // 1. Sort faces from Highest to Lowest
+    // Sort faces from Highest to Lowest
     val faces = dieDist.keys.toSeq.sorted(Ordering[Int].reverse)
     
-    // 2. Precompute cumulative probabilities from the bottom up.
+    // Precompute cumulative probabilities from the bottom up.
     // cum(i) = probability of a die being face 'i' OR LOWER.
-    // This is essential for conditional probability.
     val cumProbs = new Array[Double](faces.length + 1)
     cumProbs(faces.length) = 0.0
     for (i <- (0 until faces.length).reverse) {
       cumProbs(i) = cumProbs(i + 1) + dieDist(faces(i))
     }
 
-    // 3. DP State: dp[rem][kept] = Map[Sum -> Prob]
-    //    rem: dice remaining to be processed
-    //    kept: dice kept so far (sum of values)
+    // DP State: dp[rem][kept] = LongMap[Sum -> Prob]
     var dp = Array.fill(n + 1)(Array.fill(k + 1)(mutable.LongMap[Double]()))
     dp(n)(0)(0L) = 1.0
 
-    // 4. Iterate over each face
+    // Iterate over each face
     for (i <- faces.indices) {
       val face = faces(i)
       val pFace = dieDist(face)
       val totalRemainingProb = cumProbs(i)
 
-      // If no probability mass remaining, skip (should not happen if distribution sums to 1.0)
       if (totalRemainingProb > 0.0) {
         // Conditional Probability: P(face | face is <= current face)
         val pCond = pFace / totalRemainingProb
@@ -71,18 +123,10 @@ object MathOps {
               val binomDist = binomials(rem)
               
               binomDist.foreach { case (c, pC) =>
-                // c = number of dice (out of 'rem') that showed this face
-                // pC = probability of exactly c dice showing this face
-                
                 if (pC > 0) {
                   val newRem = rem - c
-                  
-                  // Determine how many of the 'c' dice we keep
-                  // We keep min(c, remaining_needed)
                   val take = math.min(c, k - r)
                   val newR = r + take
-                  
-                  // Calculate delta sum
                   val deltaSum = take.toLong * face
                   
                   val targetMap = nextDp(newRem)(newR)
@@ -100,12 +144,11 @@ object MathOps {
       }
     }
     
-    // 5. Extract Result
-    // After processing all faces, we must have 0 dice remaining (rem=0) and k dice kept (r=k)
+    // Extract Result
     dp(0)(k).map { case (l, d) => l.toInt -> d }.toMap
   }
 
-  // --- Method: Keep Smallest ---
+  // --- Method: Keep Smallest (DP) ---
   private def keepSmallestDP(k: Int, n: Int, dieDist: Distribution): Distribution = {
     // Sort faces from Lowest to Highest
     val faces = dieDist.keys.toSeq.sorted
@@ -178,55 +221,6 @@ object MathOps {
       m(k) = currentProb
     }
     m.toMap
-  }
-
-  // --- Method: Keep Largest (Greedy DP with LongMap) ---
-  // This method is faster for small k and small die sizes.
-  private def keepLargestGreedy(k: Int, n: Int, dieDist: Distribution): Distribution = {
-    val maxVal = dieDist.keys.max
-    val bitsPerDie = (32 - Integer.numberOfLeadingZeros(maxVal))
-    
-    if (k * bitsPerDie > 60) {
-      return keepLargestDP(k, n, dieDist)
-    }
-
-    val mask = (1L << bitsPerDie) - 1L
-    var stateMap = mutable.LongMap[Double](0L -> 1.0)
-
-    for (_ <- 0 until n) {
-      val nextStateMap = mutable.LongMap[Double]()
-      stateMap.foreach { case (stateKey, stateProb) =>
-        
-        val currentList = (0 until k).map(i => ((stateKey >>> (i * bitsPerDie)) & mask).toInt).toList
-
-        dieDist.foreach { case (roll, rollProb) =>
-          // Optimization: Avoid sorting if the new roll is not in the top k of (k+1)
-          val merged: List[Int] = if (currentList.size == k && roll <= currentList.head) {
-            currentList
-          } else {
-            (roll :: currentList).sorted.takeRight(k)
-          }
-          
-          var newKey = 0L
-          var shift = 0
-          for (v <- merged) {
-            newKey |= (v.toLong << shift)
-            shift += bitsPerDie
-          }
-          
-          val newProb = stateProb * rollProb
-          nextStateMap(newKey) = nextStateMap.getOrElse(newKey, 0.0) + newProb
-        }
-      }
-      stateMap = nextStateMap
-    }
-
-    val result = mutable.Map[Int, Double]()
-    stateMap.foreach { case (key, prob) =>
-      val sum = (0 until k).map(i => ((key >>> (i * bitsPerDie)) & mask).toInt).sum
-      result(sum) = result.getOrElse(sum, 0.0) + prob
-    }
-    result.toMap
   }
 
   // --- Existing Math Ops ---
