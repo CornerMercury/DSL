@@ -11,6 +11,10 @@ case class DuplicateParameter(name: String) extends ScopeError
 
 object scopeChecker {
 
+  // Define functions that are handled natively by the interpreter
+  // and do not need to be declared in the source code.
+  val builtInFunctions = Set("keepLargest")
+
   def check(program: Program): List[ScopeError] = {
     val errors = mutable.ListBuffer.empty[ScopeError]
     val scopes = mutable.Stack.empty[mutable.Set[String]]
@@ -34,12 +38,14 @@ object scopeChecker {
           errors += UndeclaredVariable(name)
 
       case Call(name, args) =>
-        if (!declaredFuncs.contains(name))
+        // Allow the call if it's a declared user function OR a known builtin
+        if (!declaredFuncs.contains(name) && !builtInFunctions.contains(name))
           errors += UndeclaredFunction(name)
         args.foreach(checkExpr)
 
       case MapExpr(funcName, inner) =>
-        if (!declaredFuncs.contains(funcName))
+        // Allow the call if it's a declared user function OR a known builtin
+        if (!declaredFuncs.contains(funcName) && !builtInFunctions.contains(funcName))
           errors += UndeclaredFunction(funcName)
         checkExpr(inner)
 

@@ -49,16 +49,38 @@ object interpreter {
     case TyCustomDist(d, _) => sem.custom(d)
 
     case TyCall(name, args, _) =>
-      val func = funcEnv.getOrElse(name,
-        throw new IllegalArgumentException(s"Undefined function: $name"))
-      
-      if (func.params.size != args.size) {
-        throw new IllegalArgumentException(s"Function ${func.name} expects ${func.params.size} arguments, got ${args.size}")
-      }
+      // Switch-case for Native Builtins
+      name match {
+        case "keepLargest" =>
+          if (args.size != 3) throw new IllegalArgumentException(s"keepLargest expects 3 arguments, got ${args.size}")
+          
+          // Evaluate arguments
+          val dK = eval(args(0), env, funcEnv, sem, mode)
+          val dN = eval(args(1), env, funcEnv, sem, mode)
+          val dDie = eval(args(2), env, funcEnv, sem, mode)
+          
+          // Validate arguments: k and n must be scalars
+          if (dK.size != 1) throw new IllegalArgumentException(s"keepLargest 'keep' count must be a scalar, got distribution")
+          if (dN.size != 1) throw new IllegalArgumentException(s"keepLargest 'pool' count must be a scalar, got distribution")
+          
+          val k = dK.keys.head
+          val n = dN.keys.head
+          
+          MathOps.keepLargest(k, n, dDie)
 
-      val evaluatedArgs = args.map(eval(_, env, funcEnv, sem, mode))
-      val newEnv = env ++ func.params.zip(evaluatedArgs)
-      eval(typer.annotate(func.body), newEnv, funcEnv, sem, mode)
+        case _ =>
+          // Standard User Function Logic
+          val func = funcEnv.getOrElse(name,
+            throw new IllegalArgumentException(s"Undefined function: $name"))
+          
+          if (func.params.size != args.size) {
+            throw new IllegalArgumentException(s"Function ${func.name} expects ${func.params.size} arguments, got ${args.size}")
+          }
+
+          val evaluatedArgs = args.map(eval(_, env, funcEnv, sem, mode))
+          val newEnv = env ++ func.params.zip(evaluatedArgs)
+          eval(typer.annotate(func.body), newEnv, funcEnv, sem, mode)
+      }
 
     case TyMapExpr(funcName, inner, _) =>
       val dist = eval(inner, env, funcEnv, sem, mode)
@@ -142,7 +164,6 @@ object interpreter {
       val dL = eval(l, env, funcEnv, sem, mode)
       val dR = eval(r, env, funcEnv, sem, mode)
       
-      // Extract types from the Typed AST nodes for optimization
       val tyL = l.ty
       val tyR = r.ty
 
