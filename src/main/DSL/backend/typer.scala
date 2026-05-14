@@ -13,6 +13,8 @@ object typer {
     case Ident(name)      => TyIdent(name, UnknownTy)
     case IntLiteral(n)    => TyIntLiteral(n, ScalarTy)
     case CustomDist(dist) => TyCustomDist(dist, classify(dist))
+    
+    // Pass generic type for calls (could be improved with function signatures)
     case Call(name, args) => TyCall(name, args.map(infer), GenericDistTy)
 
     case MapExpr(funcName, inner) =>
@@ -61,11 +63,13 @@ object typer {
     case Sub(l, r) => binary(l, r, BinaryOp.Sub)
     case Mul(l, r) => binary(l, r, BinaryOp.Mul)
     case Div(l, r) => binary(l, r, BinaryOp.Div)
-    case Eq(l, r)  => binary(l, r, BinaryOp.Eq)
-    case Lt(l, r)  => binary(l, r, BinaryOp.Lt)
-    case Le(l, r)  => binary(l, r, BinaryOp.Le)
-    case Gt(l, r)  => binary(l, r, BinaryOp.Gt)
-    case Ge(l, r)  => binary(l, r, BinaryOp.Ge)
+    
+    // Comparisons always result in a boolean-like distribution (Bernoulli)
+    case Eq(l, r)  => binaryComp(l, r, BinaryOp.Eq)
+    case Lt(l, r)  => binaryComp(l, r, BinaryOp.Lt)
+    case Le(l, r)  => binaryComp(l, r, BinaryOp.Le)
+    case Gt(l, r)  => binaryComp(l, r, BinaryOp.Gt)
+    case Ge(l, r)  => binaryComp(l, r, BinaryOp.Ge)
   }
 
   private def binary(l: Expr, r: Expr, op: BinaryOp): TyBinary = {
@@ -74,6 +78,21 @@ object typer {
     val resTy =
       if (tL.ty == ScalarTy && tR.ty == ScalarTy) ScalarTy
       else GenericDistTy
+    TyBinary(op, tL, tR, resTy)
+  }
+
+  // Helper for comparison operators which return BernoulliTy
+  private def binaryComp(l: Expr, r: Expr, op: BinaryOp): TyBinary = {
+    val tL = infer(l)
+    val tR = infer(r)
+    
+    // If both are Scalar, the result is deterministic (Scalar 0 or 1).
+    // Otherwise, the result is a Bernoulli distribution.
+    // We use 0.0 as a placeholder probability since we don't calculate 'p' at compile time.
+    val resTy = 
+      if (tL.ty == ScalarTy && tR.ty == ScalarTy) ScalarTy
+      else BernoulliTy(0.0) 
+      
     TyBinary(op, tL, tR, resTy)
   }
 }

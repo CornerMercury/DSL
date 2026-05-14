@@ -6,7 +6,7 @@ import parsley.{Success, Failure}
 import DSL.frontend.parser
 import DSL.frontend.scopeChecker
 import DSL.frontend.AST.Program
-import DSL.backend.{optimiser, typeChecker, TypeError, NonScalarComparison, ArgTypeMismatch, GenericDistTy, ScalarTy, UnknownTy, UniformTy}
+import DSL.backend.{optimiser, typeChecker, TypeError}
 
 class TypeCheckerSpec extends AnyFlatSpec {
 
@@ -27,52 +27,33 @@ class TypeCheckerSpec extends AnyFlatSpec {
     errors shouldBe empty
   }
 
-  it should "report NonScalarComparison for uniform distribution < scalar" in {
+  it should "allow distribution vs scalar comparisons" in {
     val errors = checkTypes("d6 < 3")
-    errors should have size 1
-    val err = errors.head.asInstanceOf[NonScalarComparison]
-    err.op shouldBe "Lt"
-    err.leftTy shouldBe UniformTy
-    err.rightTy shouldBe ScalarTy
+    errors shouldBe empty
   }
 
-  it should "report NonScalarComparison for scalar > uniform distribution" in {
+  it should "allow scalar vs distribution comparisons" in {
     val errors = checkTypes("3 > d6")
-    errors should have size 1
-    val err = errors.head.asInstanceOf[NonScalarComparison]
-    err.op shouldBe "Gt"
-    err.leftTy shouldBe ScalarTy
-    err.rightTy shouldBe UniformTy
+    errors shouldBe empty
   }
 
-  it should "report NonScalarComparison for uniform distribution <= uniform distribution" in {
+  it should "allow distribution vs distribution comparisons" in {
     val errors = checkTypes("d6 <= d6")
-    errors should have size 1
-    val err = errors.head.asInstanceOf[NonScalarComparison]
-    err.op shouldBe "Le"
-    err.leftTy shouldBe UniformTy
-    err.rightTy shouldBe UniformTy
+    errors shouldBe empty
   }
 
-  it should "report NonScalarComparison for generic distribution < scalar" in {
+  it should "allow generic distribution comparisons" in {
     val errors = checkTypes("2d6 < 3")
-    errors should have size 1
-    val err = errors.head.asInstanceOf[NonScalarComparison]
-    err.op shouldBe "Lt"
-    err.leftTy shouldBe GenericDistTy
-    err.rightTy shouldBe ScalarTy
+    errors shouldBe empty
   }
 
-  it should "report NonScalarComparison when comparing assigned distribution" in {
+  it should "allow comparisons on assigned distributions" in {
     val errors = checkTypes(
       """x = d6
         |x < 5
         |""".stripMargin
     )
-    errors should have size 1
-    val err = errors.head.asInstanceOf[NonScalarComparison]
-    err.leftTy shouldBe UniformTy
-    err.rightTy shouldBe ScalarTy
+    errors shouldBe empty
   }
 
   it should "allow equality on distributions" in {
@@ -80,7 +61,7 @@ class TypeCheckerSpec extends AnyFlatSpec {
     errors shouldBe empty
   }
 
-  it should "allow map expressions over distributions even if func requires scalar" in {
+  it should "allow map expressions over distributions" in {
     // map enumerates the distribution, passing scalar outcomes to the function
     val errors = checkTypes(
       """func f(x) { x >= 5 }
@@ -90,64 +71,26 @@ class TypeCheckerSpec extends AnyFlatSpec {
     errors shouldBe empty
   }
 
-  it should "report ArgTypeMismatch when passing uniform distribution to function requiring scalar" in {
+  it should "allow passing distributions to functions that use comparisons" in {
+    // Since comparisons are now defined for distributions, functions taking distributions and comparing them are valid
     val errors = checkTypes(
       """func f(x) {
         |  x >= 5
         |}
         |f(d6)
-        |""".stripMargin
-    )
-    errors should have size 1
-    errors.head shouldBe an[ArgTypeMismatch]
-    val err = errors.head.asInstanceOf[ArgTypeMismatch]
-    err.funcName shouldBe "f"
-    err.paramName shouldBe "x"
-    err.expected shouldBe ScalarTy
-    err.actual shouldBe UniformTy
-  }
-
-  it should "allow passing scalar to function requiring scalar" in {
-    val errors = checkTypes(
-      """func f(x) {
-        |  x >= 5
-        |}
-        |f(1)
         |""".stripMargin
     )
     errors shouldBe empty
   }
-
-  it should "report ArgTypeMismatch when passing assigned distribution to function" in {
+  
+  it should "allow functions to return distributions based on comparisons" in {
     val errors = checkTypes(
-      """func f(x) {
-        |  x >= 5
+      """func check(x, y) {
+        |  x > y
         |}
-        |y = d6
-        |f(y)
+        |check(1d6, 2d6)
         |""".stripMargin
     )
-    errors should have size 1
-    errors.head shouldBe an[ArgTypeMismatch]
-    val err = errors.head.asInstanceOf[ArgTypeMismatch]
-    err.funcName shouldBe "f"
-    err.paramName shouldBe "x"
-    err.actual shouldBe UniformTy
-  }
-
-  it should "report ArgTypeMismatch only for the invalid call site" in {
-    val errors = checkTypes(
-      """func f(x) {
-        |  x >= 5
-        |}
-        |f(1)
-        |f(d6)
-        |""".stripMargin
-    )
-    errors should have size 1
-    errors.head shouldBe an[ArgTypeMismatch]
-    val err = errors.head.asInstanceOf[ArgTypeMismatch]
-    err.funcName shouldBe "f"
-    err.actual shouldBe UniformTy
+    errors shouldBe empty
   }
 }

@@ -141,17 +141,22 @@ object interpreter {
     case TyBinary(op, l, r, _) =>
       val dL = eval(l, env, funcEnv, sem, mode)
       val dR = eval(r, env, funcEnv, sem, mode)
+      
+      // Extract types from the Typed AST nodes for optimization
+      val tyL = l.ty
+      val tyR = r.ty
+
       op match {
         case BinaryOp.Dice => sem.dice(dL, dR, mode)
         case BinaryOp.Add  => sem.add(dL, dR)
         case BinaryOp.Sub  => sem.sub(dL, dR)
         case BinaryOp.Mul  => sem.mul(dL, dR)
         case BinaryOp.Div  => sem.div(dL, dR)
-        case BinaryOp.Eq   => sem.eq(dL, dR)
-        case BinaryOp.Lt   => sem.lt(dL, dR)
-        case BinaryOp.Le   => sem.le(dL, dR)
-        case BinaryOp.Gt   => sem.gt(dL, dR)
-        case BinaryOp.Ge   => sem.ge(dL, dR)
+        case BinaryOp.Eq   => sem.eq(dL, tyL, dR, tyR)
+        case BinaryOp.Lt   => sem.lt(dL, tyL, dR, tyR)
+        case BinaryOp.Le   => sem.le(dL, tyL, dR, tyR)
+        case BinaryOp.Gt   => sem.gt(dL, tyL, dR, tyR)
+        case BinaryOp.Ge   => sem.ge(dL, tyL, dR, tyR)
       }
   }
 

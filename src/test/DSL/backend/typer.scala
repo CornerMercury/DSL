@@ -47,8 +47,8 @@ class TyperSpec extends AnyFlatSpec {
     mixedAdd.ty shouldBe GenericDistTy
   }
 
-  it should "type stochastic equality as GenericDist when dice are involved" in {
+  it should "type comparison as Bernoulli of unknown probability" in {
     val typed = typer.annotate(Eq(Dice(IntLiteral(1), IntLiteral(6)), IntLiteral(6)))
-    typed.ty shouldBe GenericDistTy
+    typed.ty shouldBe BernoulliTy(0.0)
   }
 }

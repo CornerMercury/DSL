@@ -1,6 +1,7 @@
 package DSL.backend
 
 import DSL.backend.typedAST._
+import semanticTypes._
 
 trait DistributionSemantics {
   def scalar(n: Int): Distribution
@@ -11,11 +12,11 @@ trait DistributionSemantics {
   def mul(d1: Distribution, d2: Distribution): Distribution
   def div(d1: Distribution, d2: Distribution): Distribution
 
-  def eq(d1: Distribution, d2: Distribution): Distribution
-  def lt(d1: Distribution, d2: Distribution): Distribution
-  def le(d1: Distribution, d2: Distribution): Distribution
-  def gt(d1: Distribution, d2: Distribution): Distribution
-  def ge(d1: Distribution, d2: Distribution): Distribution
+  def eq(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
+  def lt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
+  def le(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
+  def gt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
+  def ge(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
 
   def dice(count: Distribution, sides: Distribution, mode: DiceMode): Distribution
 
@@ -46,26 +47,114 @@ object DefaultDistributionSemantics extends DistributionSemantics {
   override def div(d1: Distribution, d2: Distribution): Distribution =
     MathOps.convolveDiv(d1, d2)
 
-  override def eq(d1: Distribution, d2: Distribution): Distribution =
-    if (d1 == d2) MathOps.scalar(1)
-    else MathOps.scalar(0)
+  override def eq(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+    (ty1, ty2) match {
+      case (ScalarTy, ScalarTy) =>
+        val res = if (d1.keys.head == d2.keys.head) 1 else 0
+        MathOps.scalar(res)
 
-  override def lt(d1: Distribution, d2: Distribution): Distribution =
-    scalarCompare(d1, d2, _ < _)
+      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+        val pTrue = (1.0 - p1) * (1.0 - p2) + (p1 * p2)
+        booleanDist(pTrue)
 
-  override def le(d1: Distribution, d2: Distribution): Distribution =
-    scalarCompare(d1, d2, _ <= _)
+      case _ =>
+        val (small, large) = if (d1.size < d2.size) (d1, d2) else (d2, d1)
+        var pTrue = 0.0
+        small.foreach { case (k, v) => if (large.contains(k)) pTrue += v * large(k) }
+        booleanDist(pTrue)
+    }
+  }
 
-  override def gt(d1: Distribution, d2: Distribution): Distribution =
-    scalarCompare(d1, d2, _ > _)
+  override def lt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+    (ty1, ty2) match {
+      case (ScalarTy, ScalarTy) =>
+        val res = if (d1.keys.head < d2.keys.head) 1 else 0
+        MathOps.scalar(res)
 
-  override def ge(d1: Distribution, d2: Distribution): Distribution =
-    scalarCompare(d1, d2, _ >= _)
+      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+        booleanDist((1.0 - p1) * p2)
 
-  private def scalarCompare(d1: Distribution, d2: Distribution, op: (Int, Int) => Boolean): Distribution = {
-    val v1 = d1.keys.head
-    val v2 = d2.keys.head
-    if (op(v1, v2)) MathOps.scalar(1) else MathOps.scalar(0)
+      case (UniformTy, UniformTy) if d1.size == d2.size =>
+        val n = d1.size
+        booleanDist((1.0 - 1.0 / n) / 2.0)
+
+      case _ => genericConvolution(d1, d2, _ < _)
+    }
+  }
+
+  override def le(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+    (ty1, ty2) match {
+      case (ScalarTy, ScalarTy) =>
+        val res = if (d1.keys.head <= d2.keys.head) 1 else 0
+        MathOps.scalar(res)
+
+      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+        booleanDist(1.0 - (p1 * (1.0 - p2)))
+
+      case (UniformTy, UniformTy) if d1.size == d2.size =>
+        val n = d1.size
+        val pWin = (1.0 - 1.0 / n) / 2.0
+        booleanDist(1.0 - pWin)
+
+      case _ => genericConvolution(d1, d2, _ <= _)
+    }
+  }
+
+  override def gt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+    (ty1, ty2) match {
+      case (ScalarTy, ScalarTy) =>
+        val res = if (d1.keys.head > d2.keys.head) 1 else 0
+        MathOps.scalar(res)
+
+      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+        booleanDist(p1 * (1.0 - p2))
+
+      case (UniformTy, UniformTy) if d1.size == d2.size =>
+        val n = d1.size
+        booleanDist((1.0 - 1.0 / n) / 2.0)
+
+      case _ => genericConvolution(d1, d2, _ > _)
+    }
+  }
+
+  override def ge(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+    (ty1, ty2) match {
+      case (ScalarTy, ScalarTy) =>
+        val res = if (d1.keys.head >= d2.keys.head) 1 else 0
+        MathOps.scalar(res)
+
+      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+        booleanDist(1.0 - ((1.0 - p1) * p2))
+
+      case (UniformTy, UniformTy) if d1.size == d2.size =>
+        val n = d1.size
+        val pWin = (1.0 - 1.0 / n) / 2.0
+        booleanDist(1.0 - pWin)
+
+      case _ => genericConvolution(d1, d2, _ >= _)
+    }
+  }
+
+  private def genericConvolution(d1: Distribution, d2: Distribution, op: (Int, Int) => Boolean): Distribution = {
+    var pTrue = 0.0
+    for ((x, px) <- d1; (y, py) <- d2) {
+      if (op(x, y)) pTrue += px * py
+    }
+    booleanDist(pTrue)
+  }
+
+  private def booleanDist(pTrue: Double): Distribution = {
+    val p = math.max(0.0, math.min(1.0, pTrue))
+    
+    // Optimization: If the outcome is deterministic (p=0 or p=1), return a Scalar.
+    // This ensures the map only contains the actual outcome, keeping the distribution "clean" (size 1).
+    if (p >= 1.0 - 1e-9) {
+      MathOps.scalar(1)
+    } else if (p <= 1e-9) {
+      MathOps.scalar(0)
+    } else {
+      Map(0 -> (1.0 - p), 1 -> p)
+    }
   }
 
   override def dice(

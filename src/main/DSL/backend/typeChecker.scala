@@ -53,9 +53,6 @@ object typeChecker {
         
       case TyMapExpr(funcName, inner, _) =>
         checkTyExpr(inner)
-        // Map enumerates the distribution and passes individual values as scalars.
-        // Therefore, the function parameter effectively receives ScalarTy, which satisfies
-        // any ScalarTy constraint. No ArgTypeMismatch check needed here.
         
       case TyBlock(stmts, finalExpr, _) =>
         stmts.foreach {
@@ -80,16 +77,8 @@ object typeChecker {
         checkTyExpr(l)
         checkTyExpr(r)
         
-        op match {
-          case BinaryOp.Lt | BinaryOp.Le | BinaryOp.Gt | BinaryOp.Ge =>
-            val leftTy = inferTyType(l, typeEnv)
-            val rightTy = inferTyType(r, typeEnv)
-            
-            if (!isScalarOrUnknown(leftTy) || !isScalarOrUnknown(rightTy)) {
-              errors += NonScalarComparison(op.toString, leftTy, rightTy)
-            }
-          case _ => ()
-        }
+        // Removed: Type checking for scalars in binary comparisons (lt, le, gt, ge)
+        // Comparisons now work on generic distributions.
     }
 
     program.topLevel.foreach {
@@ -108,25 +97,15 @@ object typeChecker {
 
   /** 
    *  Derives parameter constraints from a function body. 
-   *  Currently, the only strict constraint is ScalarTy for parameters used in <, <=, >, >=.
+   *  Previously enforced ScalarTy for comparison ops; now treats them generally.
    */
   private def deriveConstraints(body: Expr, paramNames: Set[String]): Map[String, DistTy] = {
     val constraints = mutable.Map.empty[String, DistTy]
     val tyBody = typer.annotate(body)
     
-    def checkParam(tyExpr: TyExpr): Unit = tyExpr match {
-      case TyIdent(name, _) if paramNames.contains(name) =>
-        // Strictest requirement so far is ScalarTy
-        constraints(name) = ScalarTy
-      case _ => ()
-    }
+    // Removed: Specific constraint logic for comparison operators
     
     def walk(tyExpr: TyExpr): Unit = tyExpr match {
-      case TyBinary(op, l, r, _) if op == BinaryOp.Lt || op == BinaryOp.Le || op == BinaryOp.Gt || op == BinaryOp.Ge =>
-        checkParam(l)
-        checkParam(r)
-        walk(l); walk(r)
-        
       case TyBinary(_, l, r, _) => walk(l); walk(r)
       case TyUnary(_, inner, _) => walk(inner)
       case TyMapExpr(_, inner, _) => walk(inner)
