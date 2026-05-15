@@ -15,6 +15,10 @@ object AST {
   case class MapExpr(funcName: String, expr: Expr) extends Expr
   case class CustomDist(dist: Map[Int, Double]) extends Expr
 
+  // New Pool Nodes
+  case class Pool(items: List[Expr]) extends Expr
+  case class PoolConcat(left: Expr, right: Expr) extends Expr
+
   case class Add(left: Expr, right: Expr) extends Expr
   case class Sub(left: Expr, right: Expr) extends Expr
   case class Mul(left: Expr, right: Expr) extends Expr

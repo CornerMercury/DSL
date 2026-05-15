@@ -9,7 +9,7 @@ import parsley.combinator.{sepBy, some, option, many}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, mapKeyword, funcKeyword}
+import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, mapKeyword, funcKeyword, lbracket, rbracket}
 import DSL.frontend.AST._
 
 object parser {
@@ -21,8 +21,10 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
-    case _: Sum | _: Prod | _: Max | _: Min | _: MapExpr | _: IfExpr => e
-    case _                             => Sum(e)
+    case _: Sum | _: Prod | _: Max | _: Min | _: MapExpr | _: IfExpr | _: Block => e
+    // Dice and Pools are wrapped in Sum when at the top level (Right(expr)), 
+    // but remain lazy inside functions (where this function is not called).
+    case _ => Sum(e)
   }
 
   private lazy val parser: Parsley[Program] = fully(program)
@@ -43,7 +45,6 @@ object parser {
       }
     }
 
-  /** logic for { stmt; expr } blocks used in funcs and ifs. */
   private lazy val block: Parsley[Block] = 
     ("{" ~> many(blockItem <~ option(";")) <~ "}").map { items =>
       if (items.isEmpty) {
@@ -64,7 +65,6 @@ object parser {
 
   private val rollOp = char('~')
 
-  /** Specifically parses: v = ~d6 used in if-headers */
   private lazy val rollBinding: Parsley[RollBinding] =
     (atomic(identifier <~ "=" <~ rollOp) <~> expr).map { case (id, e) => RollBinding(id, e) }
 
@@ -94,14 +94,11 @@ object parser {
     }
   }
 
-  /** Expressions */
-  
   private val diceOp = char('d')
 
   private lazy val expr: Parsley[Expr] = precedence[Expr](term)(
-    // <= and >= must be listed before < and > so Parsley matches them properly
     Ops(InfixL)("==" #> Eq.apply, "<=" #> Le.apply, "<" #> Lt.apply, ">=" #> Ge.apply, ">" #> Gt.apply),
-    Ops(InfixL)("+" #> Add.apply, "-" #> Sub.apply)
+    Ops(InfixL)("+" #> Add.apply, "-" #> Sub.apply, "++" #> PoolConcat.apply)
   )
 
   private lazy val term: Parsley[Expr] = precedence[Expr](atom)(
@@ -109,9 +106,12 @@ object parser {
     Ops(InfixL)("*" #> Mul.apply, "/" #> Div.apply)
   )
 
-  /** Atoms - ifExpr MUST come before customDistLiteral to prevent { being consumed by dist parser */
+  private lazy val poolList: Parsley[Pool] = {
+    (lbracket ~> sepBy(term, ",") <~ rbracket).map(Pool.apply)
+  }
+
   private lazy val atom: Parsley[Expr] = 
-    literal <|> ifExpr <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> 
+    literal <|> ifExpr <|> poolList <|> customDistLiteral <|> atomic(sumCall) <|> atomic(prodCall) <|> 
     atomic(maxCall) <|> atomic(minCall) <|> atomic(mapCall) <|> atomic(prefixDice) <|> funcCall <|> identRef <|> parens
 
   private lazy val literal: Parsley[IntLiteral] = 

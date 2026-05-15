@@ -15,7 +15,11 @@ object lexer {
             identifierLetter = Basic(c => Character.isLetterOrDigit(c) || c == '_'),
         ),
         
-        SymbolDesc.plain.copy(hardKeywords = Set("sum", "prod", "func", "max", "min", "map")),
+        // UPDATE: Added "++" to hardOperators
+        SymbolDesc.plain.copy(
+          hardKeywords = Set("sum", "prod", "func", "max", "min", "map"),
+          hardOperators = Set("+", "-", "*", "/", "==", "!=", "<=", "<", ">=", ">", "++")
+        ),
 
         NumericDesc.plain.copy(
             integerNumbersCanBeHexadecimal = false,
@@ -29,7 +33,6 @@ object lexer {
     private val lexer = new Lexer(desc)
 
     val integer = lexer.lexeme.integer.decimal32
-    
     val double: Parsley[Double] = lexer.lexeme.numeric.real.decimal.map(_.toDouble)
 
     val sumKeyword = lexer.lexeme(string("sum"))
@@ -38,6 +41,9 @@ object lexer {
     val minKeyword = lexer.lexeme(string("min"))
     val mapKeyword = lexer.lexeme(string("map"))
     val funcKeyword = lexer.lexeme(string("func"))
+
+    val lbracket: Parsley[String] = lexer.lexeme(string("["))
+    val rbracket: Parsley[String] = lexer.lexeme(string("]"))
 
     val identifier: Parsley[String] = lexer.lexeme.names.identifier
 
