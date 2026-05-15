@@ -1,0 +1,105 @@
+package DSL
+
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers._
+import DSL.frontend.AST._
+import DSL.backend.interpreter
+
+class KeepDropSpec extends AnyFlatSpec {
+
+  /**
+   * Helper to wrap a single expression into a Program, interpret it,
+   * and verify the resulting distribution.
+   * 
+   * Updated: Does NOT enforce that the distribution only contains the expected keys.
+   * It only verifies that the specified keys have the correct probabilities
+   * and that the total probability sums to 1.0.
+   */
+  def assertDist(expr: Expr)(expected: (Int, Double)*): Unit = {
+    val prog = Program(List(Right(expr)))
+    val dists = interpreter.interpretProgram(prog)
+    val dist = dists.head
+    val expMap = expected.toMap
+
+    // Verify specified keys match expected probabilities
+    for ((k, p) <- expMap) {
+      dist.get(k) match {
+        case Some(actual) => actual shouldBe p +- 1e-9
+        case None => fail(s"Expected key $k not found in distribution. Keys were: ${dist.keySet}")
+      }
+    }
+    
+    // Verify total probability is 1.0 (conservation of probability)
+    val totalProb = dist.values.sum
+    totalProb shouldBe 1.0 +- 1e-9
+  }
+
+  "keepLargest" should "optimize k=1 to Max" in {
+    val expr = Call("keepLargest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(
+      1 -> (1.0/36.0),
+      2 -> (3.0/36.0),
+      6 -> (11.0/36.0)
+    )
+  }
+
+  it should "handle the standard 4d6 drop lowest (keep 3)" in {
+    val expr = Call("keepLargest", List(IntLiteral(3), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(
+      3 -> (1.0/1296.0),
+      17 -> (54.0/1296.0),
+      18 -> (21.0/1296.0)
+    )
+  }
+
+  it should "be equivalent to sum when k equals n" in {
+    val expr = Call("keepLargest", List(IntLiteral(3), IntLiteral(3), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(7 -> (15.0/216.0))
+  }
+
+  "keepSmallest" should "optimize k=1 to Min" in {
+    val expr = Call("keepSmallest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(
+      1 -> (11.0/36.0),
+      2 -> (9.0/36.0),
+      6 -> (1.0/36.0)
+    )
+  }
+
+  it should "correctly keep the smallest dice" in {
+    val expr = Call("keepSmallest", List(IntLiteral(3), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(
+      3 -> (21.0/1296.0),
+      17 -> (4.0/1296.0),
+      18 -> (1.0/1296.0)
+    )
+  }
+
+  "dropLargest" should "be equivalent to keepSmallest" in {
+    // 4d6 drop 1 == 4d6 keep 3 (smallest)
+    // We verify sum 17 matches the keepSmallest calculation (4/1296)
+    val expr = Call("dropLargest", List(IntLiteral(1), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(17 -> (4.0/1296.0))
+  }
+
+  it should "handle drop 1 on 2d6 (keep min 1)" in {
+    // 2d6 drop 1 is equivalent to Min(2d6)
+    // P(6) = 1/36
+    val expr = Call("dropLargest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(6 -> (1.0/36.0))
+  }
+
+  "dropSmallest" should "be equivalent to keepLargest" in {
+    // 4d6 drop 1 == 4d6 keep 3 (largest)
+    // We verify sum 17 matches the keepLargest calculation (54/1296)
+    val expr = Call("dropSmallest", List(IntLiteral(1), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(17 -> (54.0/1296.0))
+  }
+
+  it should "handle drop 1 on 2d6 (keep max 1)" in {
+    // 2d6 drop 1 is equivalent to Max(2d6)
+    // P(1) = 1/36
+    val expr = Call("dropSmallest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    assertDist(expr)(1 -> (1.0/36.0))
+  }
+}

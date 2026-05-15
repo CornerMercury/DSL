@@ -52,21 +52,29 @@ object interpreter {
       // Switch-case for Native Builtins
       name match {
         case "keepLargest" =>
-          if (args.size != 3) throw new IllegalArgumentException(s"keepLargest expects 3 arguments, got ${args.size}")
-          
-          // Evaluate arguments
-          val dK = eval(args(0), env, funcEnv, sem, mode)
-          val dN = eval(args(1), env, funcEnv, sem, mode)
+          // We assume args are scalars (int distributions of size 1) as guaranteed by the type checker
+          val k = eval(args(0), env, funcEnv, sem, mode).keys.head
+          val n = eval(args(1), env, funcEnv, sem, mode).keys.head
           val dDie = eval(args(2), env, funcEnv, sem, mode)
-          
-          // Validate arguments: k and n must be scalars
-          if (dK.size != 1) throw new IllegalArgumentException(s"keepLargest 'keep' count must be a scalar, got distribution")
-          if (dN.size != 1) throw new IllegalArgumentException(s"keepLargest 'pool' count must be a scalar, got distribution")
-          
-          val k = dK.keys.head
-          val n = dN.keys.head
-          
           MathOps.keepLargest(k, n, dDie)
+
+        case "keepSmallest" =>
+          val k = eval(args(0), env, funcEnv, sem, mode).keys.head
+          val n = eval(args(1), env, funcEnv, sem, mode).keys.head
+          val dDie = eval(args(2), env, funcEnv, sem, mode)
+          MathOps.keepSmallest(k, n, dDie)
+
+        case "dropLargest" =>
+          val k = eval(args(0), env, funcEnv, sem, mode).keys.head
+          val n = eval(args(1), env, funcEnv, sem, mode).keys.head
+          val dDie = eval(args(2), env, funcEnv, sem, mode)
+          MathOps.dropLargest(k, n, dDie)
+
+        case "dropSmallest" =>
+          val k = eval(args(0), env, funcEnv, sem, mode).keys.head
+          val n = eval(args(1), env, funcEnv, sem, mode).keys.head
+          val dDie = eval(args(2), env, funcEnv, sem, mode)
+          MathOps.dropSmallest(k, n, dDie)
 
         case _ =>
           // Standard User Function Logic

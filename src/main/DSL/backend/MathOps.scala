@@ -8,49 +8,67 @@ object MathOps {
 
   def scalar(n: Int): Distribution = Map(n -> 1.0)
 
-  // --- Main Dispatcher ---
+  // --- Helper: Sum All Dice (used for k >= n) ---
+  private def sumAll(n: Int, dieDist: Distribution): Distribution = {
+    if (n <= 0) return Map(0 -> 1.0)
+    (1 until n).foldLeft(dieDist)((acc, _) => convolve(acc, dieDist, _ + _))
+  }
+
+  // --- Dispatcher: Keep Largest ---
   def keepLargest(k: Int, n: Int, dieDist: Distribution): Distribution = {
     if (k <= 0) return Map(0 -> 1.0)
     if (n <= 0) return Map(0 -> 1.0)
     
-    // OPTIMIZATION: If K=1, use the O(F) CDF method
-    // This is mathematically optimal and independent of N
+    // Optimization: If K=1, use the O(F) CDF method
     if (k == 1) return keepHighestOne(n, dieDist)
     
     // Optimization: If we keep everything, just sum the dice
-    if (k >= n) {
-      return (1 until n).foldLeft(dieDist)((acc, _) => convolve(acc, dieDist, _ + _))
-    }
+    if (k >= n) return sumAll(n, dieDist)
 
-    // Default to the robust DP method for K > 1
+    // Default to DP
     keepLargestDP(k, n, dieDist)
   }
 
+  // --- Dispatcher: Keep Smallest ---
+  def keepSmallest(k: Int, n: Int, dieDist: Distribution): Distribution = {
+    if (k <= 0) return Map(0 -> 1.0)
+    if (n <= 0) return Map(0 -> 1.0)
+
+    // Optimization: If K=1, use the O(F) CDF method
+    if (k == 1) return keepLowestOne(n, dieDist)
+
+    // Optimization: If we keep everything, just sum the dice
+    if (k >= n) return sumAll(n, dieDist)
+
+    // Default to DP
+    keepSmallestDP(k, n, dieDist)
+  }
+
+  // --- Dispatcher: Drop Largest ---
+  // Drop largest K = Keep Smallest (N - K)
+  def dropLargest(k: Int, n: Int, dieDist: Distribution): Distribution = {
+    keepSmallest(n - k, n, dieDist)
+  }
+
+  // --- Dispatcher: Drop Smallest ---
+  // Drop smallest K = Keep Largest (N - K)
+  def dropSmallest(k: Int, n: Int, dieDist: Distribution): Distribution = {
+    keepLargest(n - k, n, dieDist)
+  }
+
   // --- Optimized: Keep Highest 1 (CDF Method) ---
-  // Time Complexity: O(F log F) where F is the number of faces.
-  // This is effectively O(1) with respect to N (number of dice).
   private def keepHighestOne(n: Int, dieDist: Distribution): Distribution = {
     if (n == 0) return Map(0 -> 1.0)
-
-    // Sort faces so we can calculate cumulative probabilities
     val faces = dieDist.keys.toSeq.sorted
     val result = mutable.Map[Int, Double]()
-    
     var cumProb = 0.0 // P(die <= current_face)
     
     for (face <- faces) {
       val pFace = dieDist(face)
       cumProb += pFace
-      
-      // P(One Die < current_face) = P(One Die <= current_face) - P(current_face)
       val prevCumProb = cumProb - pFace
-      
-      // P(Max == face) = P(All <= face)^N - P(All < face)^N
       val pMax = math.pow(cumProb, n) - math.pow(prevCumProb, n)
-      
-      if (pMax > 0.0) {
-        result(face) = pMax
-      }
+      if (pMax > 0.0) result(face) = pMax
     }
     result.toMap
   }
@@ -58,62 +76,40 @@ object MathOps {
   // --- Optimized: Keep Lowest 1 (Survival Function Method) ---
   private def keepLowestOne(n: Int, dieDist: Distribution): Distribution = {
     if (n == 0) return Map(0 -> 1.0)
-
-    // Sort descending for Lowest logic
     val faces = dieDist.keys.toSeq.sorted(Ordering[Int].reverse)
     val result = mutable.Map[Int, Double]()
-    
     var cumProb = 0.0 // P(die >= current_face)
     
     for (face <- faces) {
       val pFace = dieDist(face)
       cumProb += pFace
-      
-      // P(One Die > current_face)
       val prevCumProb = cumProb - pFace
-      
-      // P(Min == face) = P(All >= face)^N - P(All > face)^N
       val pMin = math.pow(cumProb, n) - math.pow(prevCumProb, n)
-      
-      if (pMin > 0.0) {
-        result(face) = pMin
-      }
+      if (pMin > 0.0) result(face) = pMin
     }
     result.toMap
   }
 
-  // --- Method: Keep Largest (Double Buffered DP with Conditional Probabilities) ---
-  // Best for: K > 1
+  // --- Method: Keep Largest (DP) ---
   private def keepLargestDP(k: Int, n: Int, dieDist: Distribution): Distribution = {
-    // Sort faces from Highest to Lowest
     val faces = dieDist.keys.toSeq.sorted(Ordering[Int].reverse)
-    
-    // Precompute cumulative probabilities from the bottom up.
-    // cum(i) = probability of a die being face 'i' OR LOWER.
     val cumProbs = new Array[Double](faces.length + 1)
     cumProbs(faces.length) = 0.0
     for (i <- (0 until faces.length).reverse) {
       cumProbs(i) = cumProbs(i + 1) + dieDist(faces(i))
     }
 
-    // DP State: dp[rem][kept] = LongMap[Sum -> Prob]
     var dp = Array.fill(n + 1)(Array.fill(k + 1)(mutable.LongMap[Double]()))
     dp(n)(0)(0L) = 1.0
 
-    // Iterate over each face
     for (i <- faces.indices) {
       val face = faces(i)
       val pFace = dieDist(face)
       val totalRemainingProb = cumProbs(i)
 
       if (totalRemainingProb > 0.0) {
-        // Conditional Probability: P(face | face is <= current face)
         val pCond = pFace / totalRemainingProb
-
-        // Precompute Binomial PMF for all possible rem values for this pCond
         val binomials = (0 to n).map(rem => computeBinomialPMF(rem, pCond, rem)).toArray
-
-        // Double Buffering: Create fresh state for next step
         val nextDp = Array.fill(n + 1)(Array.fill(k + 1)(mutable.LongMap[Double]()))
 
         for (rem <- 0 to n) {
@@ -121,17 +117,13 @@ object MathOps {
             val currentMap = dp(rem)(r)
             if (currentMap.nonEmpty) {
               val binomDist = binomials(rem)
-              
               binomDist.foreach { case (c, pC) =>
                 if (pC > 0) {
                   val newRem = rem - c
                   val take = math.min(c, k - r)
                   val newR = r + take
                   val deltaSum = take.toLong * face
-                  
                   val targetMap = nextDp(newRem)(newR)
-                  
-                  // Merge probabilities
                   currentMap.foreach { case (sumKey, probState) =>
                     targetMap(sumKey + deltaSum) = targetMap.getOrElse(sumKey + deltaSum, 0.0) + probState * pC
                   }
@@ -143,17 +135,13 @@ object MathOps {
         dp = nextDp
       }
     }
-    
-    // Extract Result
     dp(0)(k).map { case (l, d) => l.toInt -> d }.toMap
   }
 
   // --- Method: Keep Smallest (DP) ---
   private def keepSmallestDP(k: Int, n: Int, dieDist: Distribution): Distribution = {
-    // Sort faces from Lowest to Highest
     val faces = dieDist.keys.toSeq.sorted
-    
-    // Precompute cumulative probabilities from the top down (prob of face >= current)
+    // Cumulative prob for "Keep Smallest" is P(die >= current_face)
     val cumProbs = new Array[Double](faces.length + 1)
     cumProbs(faces.length) = 0.0
     for (i <- (0 until faces.length).reverse) {
@@ -184,7 +172,6 @@ object MathOps {
                   val take = math.min(c, k - r)
                   val newR = r + take
                   val deltaSum = take.toLong * face
-                  
                   val targetMap = nextDp(newRem)(newR)
                   currentMap.foreach { case (sumKey, probState) =>
                     targetMap(sumKey + deltaSum) = targetMap.getOrElse(sumKey + deltaSum, 0.0) + probState * pC
@@ -197,11 +184,9 @@ object MathOps {
         dp = nextDp
       }
     }
-    
     dp(0)(k).map { case (l, d) => l.toInt -> d }.toMap
   }
 
-  // Helper: Compute Binomial PMF
   private def computeBinomialPMF(n: Int, p: Double, limit: Int): Map[Int, Double] = {
     if (n == 0) return Map(0 -> 1.0)
     if (p == 0.0) return Map(0 -> 1.0)
@@ -210,7 +195,6 @@ object MathOps {
     val m = mutable.Map[Int, Double]()
     var currentProb = math.pow(1.0 - p, n) 
     m(0) = currentProb
-    
     val q = 1.0 - p
     val kMax = math.min(limit, n)
     
@@ -224,17 +208,14 @@ object MathOps {
   }
 
   // --- Existing Math Ops ---
-  
   def fastBinomial(N: Int, p: Double): Distribution = {
     if (N <= 0) return Map(0 -> 1.0)
     if (p <= 0.0) return Map(0 -> 1.0)
     if (p >= 1.0) return Map(N -> 1.0)
-
     val q = 1.0 - p
     val dist = mutable.Map[Int, Double]()
     var currentProb = math.pow(q, N)
     dist(0) = currentProb
-
     for (k <- 1 to N) {
       val numerator = p * (N - k + 1)
       val denominator = q * k
@@ -281,7 +262,6 @@ object MathOps {
 
   private def iterativeDice(count: Int, sides: Int, zero: Int, op: (Int, Int) => Int): Distribution = {
     if (count <= 0 || sides <= 0) return Map(zero -> 1.0)
-
     val oneDie = (1 to sides).map(i => i -> 1.0 / sides).toMap
     (1 until count).foldLeft(oneDie)((acc, _) => convolve(acc, oneDie, op))
   }

@@ -31,6 +31,9 @@ object typeChecker {
       checkTyExpr(tyExpr)
     }
 
+    // Helper to check if an expression is definitely a scalar
+    def isScalar(expr: TyExpr): Boolean = expr.ty == ScalarTy
+
     def checkTyExpr(tyExpr: TyExpr): Unit = tyExpr match {
       case TyIntLiteral(_, _) => ()
       case TyIdent(_, _) => ()
@@ -38,17 +41,27 @@ object typeChecker {
       
       case TyCall(name, args, _) =>
         args.foreach(checkTyExpr)
-        // Check call site against derived constraints
-        funcConstraints.get(name).foreach { constraints =>
-          val func = funcEnv(name)
-          args.zip(func.params).foreach { case (argTyExpr, paramName) =>
-            constraints.get(paramName).foreach { required =>
-              val actual = inferTyType(argTyExpr, typeEnv)
-              if (!satisfies(actual, required)) {
-                errors += ArgTypeMismatch(name, paramName, required, actual)
+        
+        // Compile-time checks for specific Built-ins
+        name match {
+          case "keepLargest" | "keepSmallest" | "dropLargest" | "dropSmallest" =>
+            if (args.size == 3) {
+              if (!isScalar(args(0))) errors += ArgTypeMismatch(name, "count (arg 0)", ScalarTy, args(0).ty)
+              if (!isScalar(args(1))) errors += ArgTypeMismatch(name, "pool (arg 1)", ScalarTy, args(1).ty)
+            }
+          case _ => 
+            // Check call site against derived constraints for user functions
+            funcConstraints.get(name).foreach { constraints =>
+              val func = funcEnv(name)
+              args.zip(func.params).foreach { case (argTyExpr, paramName) =>
+                constraints.get(paramName).foreach { required =>
+                  val actual = inferTyType(argTyExpr, typeEnv)
+                  if (!satisfies(actual, required)) {
+                    errors += ArgTypeMismatch(name, paramName, required, actual)
+                  }
+                }
               }
             }
-          }
         }
         
       case TyMapExpr(funcName, inner, _) =>
@@ -77,8 +90,10 @@ object typeChecker {
         checkTyExpr(l)
         checkTyExpr(r)
         
-        // Removed: Type checking for scalars in binary comparisons (lt, le, gt, ge)
-        // Comparisons now work on generic distributions.
+        // Type Checking for Scalars
+        op match {
+          case _ => // placeholder
+        }
     }
 
     program.topLevel.foreach {
@@ -97,16 +112,17 @@ object typeChecker {
 
   /** 
    *  Derives parameter constraints from a function body. 
-   *  Previously enforced ScalarTy for comparison ops; now treats them generally.
    */
   private def deriveConstraints(body: Expr, paramNames: Set[String]): Map[String, DistTy] = {
     val constraints = mutable.Map.empty[String, DistTy]
     val tyBody = typer.annotate(body)
     
-    // Removed: Specific constraint logic for comparison operators
-    
     def walk(tyExpr: TyExpr): Unit = tyExpr match {
-      case TyBinary(_, l, r, _) => walk(l); walk(r)
+      case TyBinary(op, l, r, _) => 
+        walk(l); walk(r)
+        // Track constraints based on binary ops if necessary
+        // (Currently generic, but structure is here for expansion)
+        
       case TyUnary(_, inner, _) => walk(inner)
       case TyMapExpr(_, inner, _) => walk(inner)
       

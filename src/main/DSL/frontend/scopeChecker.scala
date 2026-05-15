@@ -13,7 +13,7 @@ object scopeChecker {
 
   // Define functions that are handled natively by the interpreter
   // and do not need to be declared in the source code.
-  val builtInFunctions = Set("keepLargest")
+  val builtInFunctions = Set("keepLargest", "keepSmallest", "dropLargest", "dropSmallest")
 
   def check(program: Program): List[ScopeError] = {
     val errors = mutable.ListBuffer.empty[ScopeError]
