@@ -36,7 +36,7 @@ class TyperSpec extends AnyFlatSpec {
 
   it should "type Dice conservatively as GenericDist" in {
     val typed = typer.annotate(Dice(IntLiteral(2), IntLiteral(6)))
-    typed.ty shouldBe GenericDistTy
+    typed.ty shouldBe PoolTy
   }
 
   it should "type arithmetic over scalars as Scalar and otherwise Generic" in {

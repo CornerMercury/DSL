@@ -126,7 +126,7 @@ class DiceInterpreterSpec extends AnyFlatSpec {
   }
 
   it should "interpret prod(2d6) * 2 as scaling product distribution" in {
-    val prog = Program(List(Right(Prod(Mul(Dice(IntLiteral(2), IntLiteral(6)), IntLiteral(2))))))
+    val prog = Program(List(Right(Mul(Prod(Dice(IntLiteral(2), IntLiteral(6))), IntLiteral(2)))))
     val d = interpreter.interpretProgram(prog).head
     d.values.sum shouldBe 1.0 +- 1e-9
     d.keySet shouldEqual Set(2, 4, 6, 8, 10, 12, 16, 18, 20, 24, 30, 32, 36, 40, 48, 50, 60, 72)

@@ -1,6 +1,6 @@
 package DSL.backend
 
-/** Distribution kind. Preference order: Scalar > Bernoulli > Binomial > Uniform > Generic > Unknown. */
+/** Distribution kind. Preference order: Scalar > Bernoulli > Binomial > Uniform > Generic > Pool > Unknown. */
 sealed trait DistTy
 
 /** Type is not (yet) known – reserved for future inputs/variables. */
@@ -23,6 +23,9 @@ case object UniformTy extends DistTy
 
 /** Arbitrary discrete distribution. */
 case object GenericDistTy extends DistTy
+
+/** A collection of distributions, kept separate for lazy evaluation (e.g. Pools). */
+case object PoolTy extends DistTy
 
 object semanticTypes {
 

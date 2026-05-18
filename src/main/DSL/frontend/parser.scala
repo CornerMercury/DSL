@@ -21,9 +21,10 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
+    // These expressions are already self-contained or have their own aggregation logic
     case _: Sum | _: Prod | _: Max | _: Min | _: MapExpr | _: IfExpr | _: Block => e
-    // Dice and Pools are wrapped in Sum when at the top level (Right(expr)), 
-    // but remain lazy inside functions (where this function is not called).
+    // Pools are also lazy, so they are wrapped in Sum by default at top level
+    // to force a scalar result for the REPL.
     case _ => Sum(e)
   }
 

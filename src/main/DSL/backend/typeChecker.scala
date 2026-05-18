@@ -2,12 +2,13 @@ package DSL.backend
 
 import DSL.frontend.AST._
 import DSL.backend.typedAST._
-import DSL.backend.{DistTy, ScalarTy, UnknownTy, GenericDistTy}
+import DSL.backend.{DistTy, ScalarTy, UnknownTy, GenericDistTy, PoolTy}
 import scala.collection.mutable
 
 sealed trait TypeError
 case class NonScalarComparison(op: String, leftTy: DistTy, rightTy: DistTy) extends TypeError
 case class ArgTypeMismatch(funcName: String, paramName: String, expected: DistTy, actual: DistTy) extends TypeError
+case class DiceCountMustBeScalar(actualTy: DistTy) extends TypeError
 
 object typeChecker {
 
@@ -31,7 +32,6 @@ object typeChecker {
       checkTyExpr(tyExpr)
     }
 
-    // Helper to check if an expression is definitely a scalar
     def isScalar(expr: TyExpr): Boolean = expr.ty == ScalarTy
 
     def checkTyExpr(tyExpr: TyExpr): Unit = tyExpr match {
@@ -44,10 +44,23 @@ object typeChecker {
         checkTyExpr(l)
         checkTyExpr(r)
       
+      case TyBinary(BinaryOp.Dice, countExpr, sidesExpr, _) =>
+        // ENFORCEMENT: The count (left side) of Dice MUST be a Scalar
+        if (!isScalar(countExpr)) {
+          errors += DiceCountMustBeScalar(countExpr.ty)
+        }
+        checkTyExpr(countExpr)
+        checkTyExpr(sidesExpr)
+
+      case TyUnary(op, inner, _) => op match {
+        case UnaryOp.Sum | UnaryOp.Prod =>
+          checkTyExpr(inner)
+        case _ => checkTyExpr(inner)
+      }
+      
       case TyCall(name, args, _) =>
         args.foreach(checkTyExpr)
         
-        // Compile-time checks for specific Built-ins
         name match {
           case "keepLargest" | "keepSmallest" | "dropLargest" | "dropSmallest" =>
             if (args.size == 3) {
@@ -55,7 +68,6 @@ object typeChecker {
               if (!isScalar(args(1))) errors += ArgTypeMismatch(name, "pool (arg 1)", ScalarTy, args(1).ty)
             }
           case _ => 
-            // Check call site against derived constraints for user functions
             funcConstraints.get(name).foreach { constraints =>
               val func = funcEnv(name)
               args.zip(func.params).foreach { case (argTyExpr, paramName) =>
@@ -89,15 +101,11 @@ object typeChecker {
         }
         checkTyExpr(elseB)
         
-      case TyUnary(_, inner, _) => checkTyExpr(inner)
-        
       case TyBinary(op, l, r, _) =>
         checkTyExpr(l)
         checkTyExpr(r)
-        
-        // Type Checking for Scalars
         op match {
-          case _ => // placeholder
+          case _ => 
         }
     }
 
@@ -115,9 +123,6 @@ object typeChecker {
     errors.toList
   }
 
-  /** 
-   *  Derives parameter constraints from a function body. 
-   */
   private def deriveConstraints(body: Expr, paramNames: Set[String]): Map[String, DistTy] = {
     val constraints = mutable.Map.empty[String, DistTy]
     val tyBody = typer.annotate(body)
@@ -125,19 +130,14 @@ object typeChecker {
     def walk(tyExpr: TyExpr): Unit = tyExpr match {
       case TyBinary(op, l, r, _) => 
         walk(l); walk(r)
-        // Track constraints based on binary ops if necessary
-        // (Currently generic, but structure is here for expansion)
-        
       case TyUnary(_, inner, _) => walk(inner)
       case TyMapExpr(_, inner, _) => walk(inner)
-      
       case TyBlock(stmts, finalExpr, _) =>
         stmts.foreach {
           case Assign(_, e) => walk(typer.annotate(e))
           case Func(_, _, _) => ()
         }
         walk(finalExpr)
-        
       case TyIfExpr(branches, elseB, _) =>
         branches.foreach { branch =>
           branch.bindings.foreach(b => walk(typer.annotate(b.expr)))
@@ -145,7 +145,6 @@ object typeChecker {
           walk(branch.body)
         }
         walk(elseB)
-        
       case TyCall(_, args, _) => args.foreach(walk)
       case _ => ()
     }
@@ -154,13 +153,11 @@ object typeChecker {
     constraints.toMap
   }
 
-  /** Infers the type of an expression given a variable type environment */
   private def inferType(expr: Expr, typeEnv: Map[String, DistTy]): DistTy = {
     val t = typer.annotate(expr)
     inferTyType(t, typeEnv)
   }
 
-  /** Resolves variable types using the environment; falls back to the annotated type */
   private def inferTyType(tyExpr: TyExpr, typeEnv: Map[String, DistTy]): DistTy = tyExpr match {
     case TyIdent(name, _) => typeEnv.getOrElse(name, UnknownTy)
     case _ => tyExpr.ty

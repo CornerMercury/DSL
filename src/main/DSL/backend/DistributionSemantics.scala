@@ -2,6 +2,7 @@ package DSL.backend
 
 import DSL.backend.typedAST._
 import semanticTypes._
+// Import for DiceMode is no longer needed
 
 trait DistributionSemantics {
   def scalar(n: Int): Distribution
@@ -18,7 +19,7 @@ trait DistributionSemantics {
   def gt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
   def ge(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
 
-  def dice(count: Distribution, sides: Distribution, mode: DiceMode): Distribution
+  def dice(count: Distribution, sides: Distribution): Distribution
 
   def max(d: Distribution): Distribution
   def min(d: Distribution): Distribution
@@ -146,8 +147,6 @@ object DefaultDistributionSemantics extends DistributionSemantics {
   private def booleanDist(pTrue: Double): Distribution = {
     val p = math.max(0.0, math.min(1.0, pTrue))
     
-    // Optimization: If the outcome is deterministic (p=0 or p=1), return a Scalar.
-    // This ensures the map only contains the actual outcome, keeping the distribution "clean" (size 1).
     if (p >= 1.0 - 1e-9) {
       MathOps.scalar(1)
     } else if (p <= 1e-9) {
@@ -159,10 +158,9 @@ object DefaultDistributionSemantics extends DistributionSemantics {
 
   override def dice(
     count: Distribution,
-    sides: Distribution,
-    mode: DiceMode
+    sides: Distribution
   ): Distribution =
-    SmartConstructors.dice(count, sides, mode)
+    SmartConstructors.dice(count, sides)
 
   override def max(d: Distribution): Distribution =
     if (d.isEmpty) Map(0 -> 1.0)
