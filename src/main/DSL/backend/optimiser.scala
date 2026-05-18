@@ -74,6 +74,8 @@ object optimiser {
     case Gt(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Ge(l, r)      => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case Call(_, args) => args.flatMap(assignedVarsExpr).toSet
+    case Pool(items)   => items.flatMap(assignedVarsExpr).toSet
+    case PoolConcat(l, r) => assignedVarsExpr(l) ++ assignedVarsExpr(r)
     case _ => Set.empty
   }
 
@@ -138,6 +140,9 @@ object optimiser {
         val optBranches = branches.map(b => optimiseIfBranch(b, IfExpr(branches, elseB)))
         val (optStmts, optFinal) = optimiseBlock(elseB.statements, elseB.finalExpr)
         IfExpr(optBranches, Block(optStmts, optFinal))
+
+      case Pool(items) => Pool(items.map(optimiseExpr(_, env)))
+      case PoolConcat(l, r) => PoolConcat(optimiseExpr(l, env), optimiseExpr(r, env))
 
       case other => other
     }
@@ -260,6 +265,8 @@ object optimiser {
     case Max(i)        => getUsed(i)
     case Min(i)        => getUsed(i)
     case MapExpr(_, i) => getUsed(i)
+    case Pool(items)   => items.flatMap(getUsed).toSet
+    case PoolConcat(l, r) => getUsed(l) ++ getUsed(r)
     case Block(stmts, f) =>
       stmts.flatMap {
         case Assign(_, e) => getUsed(e)

@@ -40,4 +40,8 @@ object typedAST {
   ) extends TyExpr
 
   case class TyMapExpr(funcName: String, inner: TyExpr, ty: DistTy) extends TyExpr
+
+  // Pool Types
+  case class TyPool(items: List[TyExpr], ty: DistTy) extends TyExpr
+  case class TyPoolConcat(left: TyExpr, right: TyExpr, ty: DistTy) extends TyExpr
 }

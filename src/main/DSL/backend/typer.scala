@@ -70,6 +70,18 @@ object typer {
     case Le(l, r)  => binaryComp(l, r, BinaryOp.Le)
     case Gt(l, r)  => binaryComp(l, r, BinaryOp.Gt)
     case Ge(l, r)  => binaryComp(l, r, BinaryOp.Ge)
+
+    // Pool and PoolConcat handling
+    case Pool(items) =>
+      val tItems = items.map(infer)
+      // For now, we treat the pool type as GenericDistTy, 
+      // as it aggregates potentially multiple distributions.
+      TyPool(tItems, GenericDistTy)
+
+    case PoolConcat(left, right) =>
+      val tLeft = infer(left)
+      val tRight = infer(right)
+      TyPoolConcat(tLeft, tRight, GenericDistTy)
   }
 
   private def binary(l: Expr, r: Expr, op: BinaryOp): TyBinary = {

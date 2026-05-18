@@ -39,6 +39,11 @@ object typeChecker {
       case TyIdent(_, _) => ()
       case TyCustomDist(_, _) => ()
       
+      case TyPool(items, _) => items.foreach(checkTyExpr)
+      case TyPoolConcat(l, r, _) => 
+        checkTyExpr(l)
+        checkTyExpr(r)
+      
       case TyCall(name, args, _) =>
         args.foreach(checkTyExpr)
         

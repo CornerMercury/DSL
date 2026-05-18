@@ -48,6 +48,21 @@ object interpreter {
 
     case TyCustomDist(d, _) => sem.custom(d)
 
+    // Pool handling: A pool evaluates to the sum of its items.
+    // This satisfies the requirement for sum([2d6]) to work, 
+    // as Sum(Pool) will evaluate the Pool (which returns a sum) 
+    // and then Sum effectively acts as identity on that distribution.
+    case TyPool(items, _) =>
+      items.foldLeft(sem.scalar(0)) { (acc, item) =>
+        val itemDist = eval(item, env, funcEnv, sem, mode)
+        sem.add(acc, itemDist)
+      }
+
+    case TyPoolConcat(left, right, _) =>
+      val lDist = eval(left, env, funcEnv, sem, mode)
+      val rDist = eval(right, env, funcEnv, sem, mode)
+      sem.add(lDist, rDist)
+
     case TyCall(name, args, _) =>
       // Switch-case for Native Builtins
       name match {
