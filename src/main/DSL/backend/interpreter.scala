@@ -42,6 +42,26 @@ object interpreter {
     case PoolValue(items) => items.foldLeft(sem.scalar(0))((acc, d) => sem.add(acc, d))
   }
 
+  // --- Optimization Helpers ---
+
+  /** Checks if a distribution is a Bernoulli trial {0 -> 1-p, 1 -> p}. */
+  private def isBernoulli(d: Distribution): Boolean = {
+    d.size == 2 && d.contains(0) && d.contains(1)
+  }
+
+  /** Checks if a distribution is Uniform {1..S} with equal probability. */
+  private def isUniformDie(d: Distribution): Boolean = {
+    if (d.size <= 1) return false
+    val keys = d.keys.toSeq.sorted
+    // Keys must be 1 to N
+    if (keys != (1 to d.size)) return false
+    
+    // Probabilities must be equal
+    val probs = d.values.toSeq
+    val p0 = probs.head
+    probs.forall(p => math.abs(p - p0) < 1e-9)
+  }
+
   private def eval(
     expr: TyExpr,
     env: Env,
@@ -81,13 +101,11 @@ object interpreter {
       PoolValue(leftItems ++ rightItems)
 
     case TyBinary(BinaryOp.Dice, countExpr, sidesExpr, _) =>
-      // Type Checker enforces count is a scalar.
       val cVal = eval(countExpr, env, funcEnv, sem)
       val sVal = eval(sidesExpr, env, funcEnv, sem)
 
       (cVal, sVal) match {
         case (DistValue(cDist), _) =>
-          // cDist is guaranteed to be size 1 (Scalar) by the Type Checker
           if (cDist.size != 1) {
              throw new IllegalStateException("Dice count must be a scalar distribution")
           }
@@ -96,16 +114,9 @@ object interpreter {
           if (n <= 0) {
             PoolValue(List())
           } else {
-            // Force sides to a Distribution (handles scalars and complex expressions)
             val sidesDist = forceDist(sVal, sem)
-            
-            // Generate the distribution for a SINGLE die with the given sides.
-            // sem.dice(1, sides) is the standard way to get a single die distribution.
-            // It handles scalar sides (creating Uniform) and complex sides correctly.
             val countOne = sem.scalar(1)
             val oneDieDist = sem.dice(countOne, sidesDist)
-            
-            // Create a pool of 'n' independent dice, all with the same distribution.
             PoolValue(List.fill(n)(oneDieDist))
           }
       }
@@ -220,15 +231,59 @@ object interpreter {
 
     case TyUnary(UnaryOp.Sum, inner, _) =>
       val innerVal = eval(inner, env, funcEnv, sem)
-      DistValue(forceDist(innerVal, sem))
+      innerVal match {
+        case PoolValue(items) if items.nonEmpty =>
+          // 1. Group identical distributions
+          val groups = items.groupBy(identity).view.mapValues(_.size).toMap
+
+          // 2. Optimize each group
+          val optimizedGroups = groups.map { case (dist, count) =>
+            if (count == 1) {
+              dist
+            } else if (isBernoulli(dist)) {
+              // N x Bernoulli(p) -> Binomial(N, p)
+              val p = dist(1)
+              MathOps.fastBinomial(count, p)
+            } else if (isUniformDie(dist)) {
+              // N x Uniform(1..S) -> NdS
+              // Pass S as a scalar distribution to sem.dice
+              val sides = dist.keys.max
+              sem.dice(sem.scalar(count), sem.scalar(sides))
+            } else {
+              // Fallback: Iterative convolution
+              (1 until count).foldLeft(dist)((acc, _) => sem.add(acc, dist))
+            }
+          }.toList
+
+          // 3. Combine group results
+          DistValue(optimizedGroups.foldLeft(sem.scalar(0))((acc, d) => sem.add(acc, d)))
+
+        case _ => 
+          DistValue(forceDist(innerVal, sem))
+      }
 
     case TyUnary(UnaryOp.Prod, inner, _) =>
       val innerVal = eval(inner, env, funcEnv, sem)
       innerVal match {
-        case PoolValue(items) =>
-          val zero = sem.scalar(1)
-          val prod = items.foldLeft(zero)((acc, d) => sem.mul(acc, d))
-          DistValue(prod)
+        case PoolValue(items) if items.nonEmpty =>
+          val groups = items.groupBy(identity).view.mapValues(_.size).toMap
+
+          val optimizedGroups = groups.map { case (dist, count) =>
+            if (count == 1) {
+              dist
+            } else if (isBernoulli(dist)) {
+              // N x Bernoulli(p) -> Bernoulli(p^N)
+              val p = dist(1)
+              val pProd = math.pow(p, count)
+              Map(0 -> (1.0 - pProd), 1 -> pProd)
+            } else {
+              // Fallback: Iterative multiplication
+              (1 until count).foldLeft(dist)((acc, _) => sem.mul(acc, dist))
+            }
+          }.toList
+
+          DistValue(optimizedGroups.foldLeft(sem.scalar(1))((acc, d) => sem.mul(acc, d)))
+
         case DistValue(d) => DistValue(d)
       }
 
