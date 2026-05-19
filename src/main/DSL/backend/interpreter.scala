@@ -156,7 +156,7 @@ object interpreter {
           }
 
           val evaluatedArgs = args.map(a => forceDist(eval(a, env, funcEnv, sem), sem))
-          val newEnv = env ++ func.params.zip(evaluatedArgs).map { case (k, v) => k -> DistValue(v) }
+          val newEnv = env ++ func.params.zip(evaluatedArgs).map { case (param, v) => param.name -> DistValue(v) }
           val res = eval(typer.annotate(func.body), newEnv, funcEnv, sem)
           res
       }
@@ -174,7 +174,8 @@ object interpreter {
       
       var result: Distribution = Map.empty
       for ((v, p) <- dist) {
-        val newEnv = env + (func.params.head -> DistValue(Map(v -> 1.0)))
+        // Updated to use param.head.name
+        val newEnv = env + (func.params.head.name -> DistValue(Map(v -> 1.0)))
         val resVal = eval(typer.annotate(func.body), newEnv, funcEnv, sem)
         val resDist = forceDist(resVal, sem)
         for ((rv, rp) <- resDist) {

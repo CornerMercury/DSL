@@ -51,7 +51,6 @@ object scopeChecker {
       case Max(i)     => checkExpr(i)
       case Min(i)     => checkExpr(i)
       
-      // NEW: Handle Pool nodes
       case Pool(items) => items.foreach(checkExpr)
       case PoolConcat(l, r) => checkExpr(l); checkExpr(r)
 
@@ -112,12 +111,12 @@ object scopeChecker {
         downLayer()
 
         val paramSet = mutable.Set.empty[String]
-        params.foreach { p =>
-          if (paramSet.contains(p))
-            errors += DuplicateParameter(p)
+        params.foreach { p => 
+          if (paramSet.contains(p.name))
+            errors += DuplicateParameter(p.name)
           else {
-            paramSet.add(p)
-            declareVar(p)
+            paramSet.add(p.name)
+            declareVar(p.name)
           }
         }
 

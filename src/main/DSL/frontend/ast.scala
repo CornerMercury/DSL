@@ -15,7 +15,7 @@ object AST {
   case class MapExpr(funcName: String, expr: Expr) extends Expr
   case class CustomDist(dist: Map[Int, Double]) extends Expr
 
-  // New Pool Nodes
+  // Pool Nodes
   case class Pool(items: List[Expr]) extends Expr
   case class PoolConcat(left: Expr, right: Expr) extends Expr
 
@@ -32,7 +32,6 @@ object AST {
   // Roll binding used inside if expression
   case class RollBinding(name: String, expr: Expr)
 
-  // Block is now an expression
   case class Block(statements: List[Stmt], finalExpr: Expr) extends Expr
 
   // Branch helper for if/elif
@@ -50,8 +49,15 @@ object AST {
 
   sealed trait Stmt extends AstNode
   case class Assign(name: String, expr: Expr) extends Stmt
-  case class Func(name: String, params: List[String], body: Block) extends Stmt
 
-  // Program now holds Either[Stmt, Expr] to distinguish top-level prints from definitions
+  sealed trait Type
+  case object DistType extends Type
+  case object PoolType extends Type
+
+  case class Param(name: String, typ: Option[Type])
+
+  case class Func(name: String, params: List[Param], body: Block) extends Stmt
+
+  // Program holds Either[Stmt, Expr] to distinguish top-level prints from definitions
   case class Program(topLevel: List[Either[Stmt, Expr]]) extends AstNode
 }

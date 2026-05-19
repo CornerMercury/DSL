@@ -15,16 +15,19 @@ object typeChecker {
   def check(program: Program): List[TypeError] = {
     val errors = mutable.ListBuffer.empty[TypeError]
     val funcEnv = program.topLevel.collect { case Left(f: Func) => f.name -> f }.toMap
-    val funcConstraints = mutable.Map.empty[String, Map[String, DistTy]]
     
-    // Pass 1: Derive parameter constraints for all functions
-    program.topLevel.foreach {
-      case Left(Func(name, params, body)) =>
-        funcConstraints(name) = deriveConstraints(body, params.toSet)
-      case _ => ()
-    }
+    // Build explicit signatures based on AST parameter types
+    val funcSignatures: Map[String, Map[String, DistTy]] = 
+      funcEnv.map { case (name, func) =>
+        name -> func.params.map { p =>
+          val ty = p.typ match {
+            case Some(PoolType) => PoolTy
+            case _ => GenericDistTy
+          }
+          p.name -> ty
+        }.toMap
+      }
     
-    // Pass 2: Traverse and check everything with a type environment
     var typeEnv = Map.empty[String, DistTy]
 
     def checkExpr(expr: Expr): Unit = {
@@ -45,7 +48,6 @@ object typeChecker {
         checkTyExpr(r)
       
       case TyBinary(BinaryOp.Dice, countExpr, sidesExpr, _) =>
-        // ENFORCEMENT: The count (left side) of Dice MUST be a Scalar
         if (!isScalar(countExpr)) {
           errors += DiceCountMustBeScalar(countExpr.ty)
         }
@@ -68,13 +70,15 @@ object typeChecker {
               if (!isScalar(args(1))) errors += ArgTypeMismatch(name, "pool (arg 1)", ScalarTy, args(1).ty)
             }
           case _ => 
-            funcConstraints.get(name).foreach { constraints =>
-              val func = funcEnv(name)
-              args.zip(func.params).foreach { case (argTyExpr, paramName) =>
-                constraints.get(paramName).foreach { required =>
-                  val actual = inferTyType(argTyExpr, typeEnv)
-                  if (!satisfies(actual, required)) {
-                    errors += ArgTypeMismatch(name, paramName, required, actual)
+            funcSignatures.get(name).foreach { signature =>
+              funcEnv.get(name).foreach { funcDef =>
+                // Zip arguments with the function's defined parameters
+                args.zip(funcDef.params).foreach { case (argTyExpr, param) =>
+                  signature.get(param.name).foreach { required =>
+                    val actual = inferTyType(argTyExpr, typeEnv)
+                    if (!satisfies(actual, required)) {
+                      errors += ArgTypeMismatch(name, param.name, required, actual)
+                    }
                   }
                 }
               }
@@ -104,9 +108,6 @@ object typeChecker {
       case TyBinary(op, l, r, _) =>
         checkTyExpr(l)
         checkTyExpr(r)
-        op match {
-          case _ => 
-        }
     }
 
     program.topLevel.foreach {
@@ -115,42 +116,20 @@ object typeChecker {
           case Assign(name, expr) =>
             checkExpr(expr)
             typeEnv = typeEnv.updated(name, inferType(expr, typeEnv))
-          case Func(_, _, body) => checkExpr(body)
+          case Func(name, params, body) => 
+            val oldEnv = typeEnv
+            val signature = funcSignatures.getOrElse(name, Map.empty)
+            val newEnv = typeEnv ++ params.map { p => 
+              p.name -> signature.getOrElse(p.name, UnknownTy)
+            }
+            typeEnv = newEnv
+            checkExpr(body)
+            typeEnv = oldEnv
         }
       case Right(expr) => checkExpr(expr)
     }
     
     errors.toList
-  }
-
-  private def deriveConstraints(body: Expr, paramNames: Set[String]): Map[String, DistTy] = {
-    val constraints = mutable.Map.empty[String, DistTy]
-    val tyBody = typer.annotate(body)
-    
-    def walk(tyExpr: TyExpr): Unit = tyExpr match {
-      case TyBinary(op, l, r, _) => 
-        walk(l); walk(r)
-      case TyUnary(_, inner, _) => walk(inner)
-      case TyMapExpr(_, inner, _) => walk(inner)
-      case TyBlock(stmts, finalExpr, _) =>
-        stmts.foreach {
-          case Assign(_, e) => walk(typer.annotate(e))
-          case Func(_, _, _) => ()
-        }
-        walk(finalExpr)
-      case TyIfExpr(branches, elseB, _) =>
-        branches.foreach { branch =>
-          branch.bindings.foreach(b => walk(typer.annotate(b.expr)))
-          walk(branch.condition)
-          walk(branch.body)
-        }
-        walk(elseB)
-      case TyCall(_, args, _) => args.foreach(walk)
-      case _ => ()
-    }
-    
-    walk(tyBody)
-    constraints.toMap
   }
 
   private def inferType(expr: Expr, typeEnv: Map[String, DistTy]): DistTy = {
@@ -166,7 +145,18 @@ object typeChecker {
   private def isScalarOrUnknown(ty: DistTy): Boolean = 
     ty == ScalarTy || ty == UnknownTy
 
-  private def satisfies(actual: DistTy, required: DistTy): Boolean = 
-    if (required == ScalarTy) actual == ScalarTy || actual == UnknownTy
-    else true
+  private def satisfies(actual: DistTy, required: DistTy): Boolean = {
+    if (required == PoolTy) {
+      actual == PoolTy
+    } 
+    else if (required == GenericDistTy) {
+      actual != PoolTy // Removed "&& actual != UnknownTy"
+    }
+    else if (required == ScalarTy) {
+      isScalarOrUnknown(actual)
+    }
+    else {
+      true
+    }
+  }
 }

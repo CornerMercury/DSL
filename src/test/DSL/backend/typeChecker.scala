@@ -77,7 +77,7 @@ class TypeCheckerSpec extends AnyFlatSpec {
       """func f(x) {
         |  x >= 5
         |}
-        |f(d6)
+        |f(sum(d6))
         |""".stripMargin
     )
     errors shouldBe empty
@@ -88,7 +88,7 @@ class TypeCheckerSpec extends AnyFlatSpec {
       """func check(x, y) {
         |  x > y
         |}
-        |check(1d6, 2d6)
+        |check(d6, sum(2d6))
         |""".stripMargin
     )
     errors shouldBe empty

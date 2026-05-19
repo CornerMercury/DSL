@@ -34,14 +34,14 @@ class ScopeCheckerSpec extends AnyFlatSpec {
   it should "allow shadowing in function body" in {
     assertNoErrors(Program(List(
       Left(Assign("x", IntLiteral(1))),
-      Left(Func("f", List("x"), Block(Nil, Ident("x")))),
+      Left(Func("f", List(Param("x", None)), Block(Nil, Ident("x")))),
       Right(Sum(Ident("x")))
     )))
   }
 
   it should "report undeclared variable in function body" in {
     assertErrors(Program(List(
-      Left(Func("f", List("a"), Block(
+      Left(Func("f", List(Param("a", None)), Block(
         List(Assign("b", Add(Ident("a"), Ident("c")))),
         Ident("b")
       )))
@@ -61,7 +61,7 @@ class ScopeCheckerSpec extends AnyFlatSpec {
 
   it should "report duplicate parameter name" in {
     assertErrors(Program(List(
-      Left(Func("f", List("x", "x"), Block(Nil, IntLiteral(0))))
+      Left(Func("f", List(Param("x", None), Param("x", None)), Block(Nil, IntLiteral(0))))
     )))(
       DuplicateParameter("x")
     )
@@ -80,7 +80,7 @@ class ScopeCheckerSpec extends AnyFlatSpec {
   it should "register variables from RollBindings in the If header" in {
     // func f(x) { if v = ~x; v == 6 { v } else { 0 } }
     assertNoErrors(Program(List(
-      Left(Func("f", List("x"), Block(Nil, IfExpr(
+      Left(Func("f", List(Param("x", None)), Block(Nil, IfExpr(
         branches = List(
           IfBranch(
             bindings = List(RollBinding("v", Ident("x"))),
@@ -138,7 +138,7 @@ class ScopeCheckerSpec extends AnyFlatSpec {
     // func f(x) { x == 1 }
     // map(f, d6)
     assertNoErrors(Program(List(
-      Left(Func("f", List("x"), Block(Nil, Eq(Ident("x"), IntLiteral(1))))),
+      Left(Func("f", List(Param("x", None)), Block(Nil, Eq(Ident("x"), IntLiteral(1))))),
       Right(MapExpr("f", Dice(IntLiteral(1), IntLiteral(6))))
     )))
   }
@@ -156,7 +156,7 @@ class ScopeCheckerSpec extends AnyFlatSpec {
     // func f(x) { x }
     // map(f, y) where y is undeclared
     assertErrors(Program(List(
-      Left(Func("f", List("x"), Block(Nil, Ident("x")))),
+      Left(Func("f", List(Param("x", None)), Block(Nil, Ident("x")))),
       Right(MapExpr("f", Ident("y")))
     )))(
       UndeclaredVariable("y")

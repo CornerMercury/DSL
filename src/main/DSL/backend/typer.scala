@@ -54,8 +54,12 @@ object typer {
 
     case Dice(c, s) =>
       val tC = infer(c)
-      // Dice always returns a PoolTy when count is scalar (enforced by checker)
-      TyBinary(BinaryOp.Dice, tC, infer(s), PoolTy)
+      val tS = infer(s)
+      val resTy = c match {
+        case IntLiteral(1) => UniformTy
+        case _             => PoolTy
+      }
+      TyBinary(BinaryOp.Dice, tC, tS, resTy)
 
     case Add(l, r) => binary(l, r, BinaryOp.Add)
     case Sub(l, r) => binary(l, r, BinaryOp.Sub)

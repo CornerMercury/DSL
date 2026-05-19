@@ -9,7 +9,7 @@ import parsley.combinator.{sepBy, some, option, many}
 import parsley.Parsley.atomic
 
 import DSL.frontend.lexer.implicits.implicitSymbol
-import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, mapKeyword, funcKeyword, lbracket, rbracket}
+import DSL.frontend.lexer.{integer, double, identifier, fully, sumKeyword, prodKeyword, maxKeyword, minKeyword, mapKeyword, funcKeyword, lbracket, rbracket, distKeyword, poolKeyword}
 import DSL.frontend.AST._
 
 object parser {
@@ -21,10 +21,7 @@ object parser {
   }
 
   private def wrapInSumIfNeeded(e: Expr): Expr = e match {
-    // These expressions are already self-contained or have their own aggregation logic
     case _: Sum | _: Prod | _: Max | _: Min | _: MapExpr | _: IfExpr | _: Block => e
-    // Pools are also lazy, so they are wrapped in Sum by default at top level
-    // to force a scalar result for the REPL.
     case _ => Sum(e)
   }
 
@@ -39,9 +36,19 @@ object parser {
   private lazy val assignStmt: Parsley[Assign] =
     atomic((identifier <~ "=") <~> expr).map { case (id, e) => Assign(id, e) }
 
+  private lazy val typ: Parsley[Type] =
+    (distKeyword #> DistType) <|> (poolKeyword #> PoolType)
+
+  // Updated to make typing optional
+  // Matches "id" or "id: type"
+  private lazy val param: Parsley[Param] =
+    (identifier <~> option(":" ~> typ)).map { case (name, tOpt) =>
+      Param(name, tOpt)
+    }
+
   private lazy val funcDecl: Parsley[Func] =
     atomic(funcKeyword ~> identifier <~ "(").flatMap { name =>
-      (sepBy(identifier, ",") <~ ")" <~> block).map { case (params, body) =>
+      (sepBy(param, ",") <~ ")" <~> block).map { case (params, body) =>
         Func(name, params, body)
       }
     }

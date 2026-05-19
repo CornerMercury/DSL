@@ -244,7 +244,7 @@ object optimiser {
   private def getUsedStmt(s: Stmt): Set[String] = s match {
     case Assign(_, e) => getUsed(e)
     case Func(_, p, b) =>
-      (b.statements.flatMap(getUsedStmt).toSet ++ getUsed(b.finalExpr)) -- p.toSet
+      (b.statements.flatMap(getUsedStmt).toSet ++ getUsed(b.finalExpr)) -- p.map(_.name).toSet
   }
 
   private def getUsed(e: Expr): Set[String] = e match {

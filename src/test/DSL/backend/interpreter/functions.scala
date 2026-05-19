@@ -23,7 +23,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "evaluate a function with arguments" in {
     val prog = Program(
       List(
-        Left(Func("addFunc", List("a", "b"), Block(Nil, Add(Ident("a"), Ident("b"))))),
+        Left(Func("addFunc", List(Param("a", None), Param("b", None)), Block(Nil, Add(Ident("a"), Ident("b"))))),
         Right(Sum(Call("addFunc", List(IntLiteral(2), IntLiteral(3)))))
       )
     )
@@ -35,7 +35,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "evaluate a function with local assignments and dice" in {
     val prog = Program(
       List(
-        Left(Func("rollPlus", List("bonus"), Block(
+        Left(Func("rollPlus", List(Param("bonus", None)), Block(
           List(Assign("r", Dice(IntLiteral(1), IntLiteral(6)))),
           Add(Ident("r"), Ident("bonus"))
         ))),
@@ -53,7 +53,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
     val prog = Program(
       List(
         Left(Assign("x", IntLiteral(100))),
-        Left(Func("shadow", List("x"), Block(
+        Left(Func("shadow", List(Param("x", None)), Block(
           List(Assign("x", Add(Ident("x"), IntLiteral(1)))),
           Ident("x")
         ))),
@@ -71,8 +71,8 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "allow functions to call other functions" in {
     val prog = Program(
       List(
-        Left(Func("double", List("x"), Block(Nil, Mul(Ident("x"), IntLiteral(2))))),
-        Left(Func("quadruple", List("x"), Block(Nil, Call("double", List(Call("double", List(Ident("x")))))))),
+        Left(Func("double", List(Param("x", None)), Block(Nil, Mul(Ident("x"), IntLiteral(2))))),
+        Left(Func("quadruple", List(Param("x", None)), Block(Nil, Call("double", List(Call("double", List(Ident("x")))))))),
         Right(Sum(Call("quadruple", List(IntLiteral(3)))))
       )
     )
@@ -95,7 +95,7 @@ class FunctionInterpreterSpec extends AnyFlatSpec {
   it should "fail if argument arity is mismatched" in {
     val prog = Program(
       List(
-        Left(Func("needsTwo", List("a", "b"), Block(Nil, IntLiteral(0)))),
+        Left(Func("needsTwo", List(Param("a", None), Param("b", None)), Block(Nil, IntLiteral(0)))),
         Right(Sum(Call("needsTwo", List(IntLiteral(1))))) // only 1 arg passed
       )
     )

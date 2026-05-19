@@ -7,7 +7,7 @@ class FunctionsSpec extends ParserSpecHelper {
   "Functions" should "parse func name(arg1, arg2, ...) { stmt; ...; expr }" in {
     val expected: AstNode = Program(
       List(
-        Left(Func("f", List("a", "b"), Block(
+        Left(Func("f", List(Param("a", None), Param("b", None)), Block(
           List(Assign("x", IntLiteral(1))),
           Ident("x")
         )))
@@ -25,18 +25,39 @@ class FunctionsSpec extends ParserSpecHelper {
 
   it should "parse function with one param" in {
     val expected: AstNode = Program(
-      List(Left(Func("one", List("x"), Block(Nil, Ident("x")))))
+      List(Left(Func("one", List(Param("x", None)), Block(Nil, Ident("x")))))
     )
     assertParse("func one(x) { x }", expected)
   }
 
   it should "parse function body with multiple statements and a final expression" in {
     val expected: AstNode = Program(
-      List(Left(Func("add", List("a", "b"), Block(
+      List(Left(Func("add", List(Param("a", None), Param("b", None)), Block(
         List(Assign("s", Add(Ident("a"), Ident("b")))),
         Ident("s")
       ))))
     )
     assertParse("func add(a, b) { s = a + b; s }", expected)
+  }
+
+  it should "parse function with explicit dist type" in {
+    val expected: AstNode = Program(
+      List(Left(Func("roll", List(Param("d", Some(DistType))), Block(Nil, Ident("d")))))
+    )
+    assertParse("func roll(d: dist) { d }", expected)
+  }
+
+  it should "parse function with explicit pool type" in {
+    val expected: AstNode = Program(
+      List(Left(Func("hand", List(Param("cards", Some(PoolType))), Block(Nil, Ident("cards")))))
+    )
+    assertParse("func hand(cards: pool) { cards }", expected)
+  }
+
+  it should "parse function with mixed typed and untyped parameters" in {
+    val expected: AstNode = Program(
+      List(Left(Func("mixed", List(Param("x", None), Param("y", Some(PoolType))), Block(Nil, Ident("x")))))
+    )
+    assertParse("func mixed(x, y: pool) { x }", expected)
   }
 }
