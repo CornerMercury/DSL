@@ -1,6 +1,7 @@
 package DSL.frontend
 
 import DSL.frontend.AST._
+import DSL.backend.Builtins 
 import scala.collection.mutable
 
 sealed trait ScopeError
@@ -11,7 +12,7 @@ case class DuplicateParameter(name: String) extends ScopeError
 
 object scopeChecker {
 
-  val builtInFunctions = Set("keepLargest", "keepSmallest", "dropLargest", "dropSmallest")
+  val builtInFunctions: Set[String] = Builtins.all.keys.toSet
 
   def check(program: Program): List[ScopeError] = {
     val errors = mutable.ListBuffer.empty[ScopeError]
@@ -30,7 +31,6 @@ object scopeChecker {
     }
 
     def checkExpr(expr: Expr): Unit = expr match {
-
       case Ident(name) =>
         if (!isInScope(name))
           errors += UndeclaredVariable(name)
@@ -39,7 +39,7 @@ object scopeChecker {
         if (!declaredFuncs.contains(name) && !builtInFunctions.contains(name))
           errors += UndeclaredFunction(name)
         args.foreach(checkExpr)
-
+        
       case MapExpr(funcName, inner) =>
         if (!declaredFuncs.contains(funcName) && !builtInFunctions.contains(funcName))
           errors += UndeclaredFunction(funcName)
@@ -72,19 +72,16 @@ object scopeChecker {
 
       case IfExpr(branches, elseB) =>
         downLayer()
-        
         branches.foreach { branch =>
           branch.bindings.foreach { b =>
             checkExpr(b.expr)
             declareVar(b.name)
           }
         }
-        
         branches.foreach { branch =>
           checkExpr(branch.condition)
           checkExpr(branch.body)
         }
-        
         checkExpr(elseB)
         upLayer()
 
@@ -102,16 +99,14 @@ object scopeChecker {
     }
 
     def checkStmt(stmt: Stmt): Unit = stmt match {
-
       case Assign(name, expr) =>
         checkExpr(expr)
         declareVar(name)
 
       case Func(name, params, body) =>
         downLayer()
-
         val paramSet = mutable.Set.empty[String]
-        params.foreach { p => 
+        params.foreach { p =>
           if (paramSet.contains(p.name))
             errors += DuplicateParameter(p.name)
           else {
@@ -119,7 +114,6 @@ object scopeChecker {
             declareVar(p.name)
           }
         }
-
         checkExpr(body)
         upLayer()
     }

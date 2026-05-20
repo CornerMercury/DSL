@@ -2,12 +2,9 @@ package DSL.backend
 
 import DSL.frontend.AST._
 import typedAST._
+import Builtins._
 
 object interpreter {
-
-  sealed trait Value
-  case class DistValue(d: Distribution) extends Value
-  case class PoolValue(items: List[Distribution]) extends Value
 
   type Env = Map[String, Value]
   type FuncEnv = Map[String, Func]
@@ -42,21 +39,14 @@ object interpreter {
     case PoolValue(items) => items.foldLeft(sem.scalar(0))((acc, d) => sem.add(acc, d))
   }
 
-  // --- Optimization Helpers ---
-
-  /** Checks if a distribution is a Bernoulli trial {0 -> 1-p, 1 -> p}. */
   private def isBernoulli(d: Distribution): Boolean = {
     d.size == 2 && d.contains(0) && d.contains(1)
   }
 
-  /** Checks if a distribution is Uniform {1..S} with equal probability. */
   private def isUniformDie(d: Distribution): Boolean = {
     if (d.size <= 1) return false
     val keys = d.keys.toSeq.sorted
-    // Keys must be 1 to N
     if (keys != (1 to d.size)) return false
-    
-    // Probabilities must be equal
     val probs = d.values.toSeq
     val p0 = probs.head
     probs.forall(p => math.abs(p - p0) < 1e-9)
@@ -111,9 +101,17 @@ object interpreter {
           }
           
           val n = cDist.keys.head
+          
           if (n <= 0) {
             PoolValue(List())
+          } else if (n == 1) {
+            // FIX: If rolling 1 die, return a single Distribution (DistValue), not a Pool.
+            // This aligns with the Type System which classifies 1dX as GenericDistTy.
+            val sidesDist = forceDist(sVal, sem)
+            val countOne = sem.scalar(1)
+            DistValue(sem.dice(countOne, sidesDist))
           } else {
+            // If rolling multiple dice, return a Pool of distributions.
             val sidesDist = forceDist(sVal, sem)
             val countOne = sem.scalar(1)
             val oneDieDist = sem.dice(countOne, sidesDist)
@@ -122,32 +120,12 @@ object interpreter {
       }
 
     case TyCall(name, args, _) =>
-      name match {
-        case "keepLargest" =>
-          val k = forceDist(eval(args(0), env, funcEnv, sem), sem).keys.head
-          val n = forceDist(eval(args(1), env, funcEnv, sem), sem).keys.head
-          val dDie = forceDist(eval(args(2), env, funcEnv, sem), sem)
-          DistValue(MathOps.keepLargest(k, n, dDie))
+      Builtins.all.get(name) match {
+        case Some(builtin) =>
+          val evaluatedArgs = args.map(a => eval(a, env, funcEnv, sem))
+          builtin.implementation(evaluatedArgs, sem)
 
-        case "keepSmallest" =>
-          val k = forceDist(eval(args(0), env, funcEnv, sem), sem).keys.head
-          val n = forceDist(eval(args(1), env, funcEnv, sem), sem).keys.head
-          val dDie = forceDist(eval(args(2), env, funcEnv, sem), sem)
-          DistValue(MathOps.keepSmallest(k, n, dDie))
-
-        case "dropLargest" =>
-          val k = forceDist(eval(args(0), env, funcEnv, sem), sem).keys.head
-          val n = forceDist(eval(args(1), env, funcEnv, sem), sem).keys.head
-          val dDie = forceDist(eval(args(2), env, funcEnv, sem), sem)
-          DistValue(MathOps.dropLargest(k, n, dDie))
-
-        case "dropSmallest" =>
-          val k = forceDist(eval(args(0), env, funcEnv, sem), sem).keys.head
-          val n = forceDist(eval(args(1), env, funcEnv, sem), sem).keys.head
-          val dDie = forceDist(eval(args(2), env, funcEnv, sem), sem)
-          DistValue(MathOps.dropSmallest(k, n, dDie))
-
-        case _ =>
+        case None =>
           val func = funcEnv.getOrElse(name,
             throw new IllegalArgumentException(s"Undefined function: $name"))
           
@@ -174,7 +152,6 @@ object interpreter {
       
       var result: Distribution = Map.empty
       for ((v, p) <- dist) {
-        // Updated to use param.head.name
         val newEnv = env + (func.params.head.name -> DistValue(Map(v -> 1.0)))
         val resVal = eval(typer.annotate(func.body), newEnv, funcEnv, sem)
         val resDist = forceDist(resVal, sem)
@@ -215,7 +192,6 @@ object interpreter {
           }
 
           if (pFalse > 0.0 && pTrue < 1.0) {
-            // Move to next branch
           } else if (pTrue > 0.0) {
             branchTaken = true
           }
@@ -234,29 +210,22 @@ object interpreter {
       val innerVal = eval(inner, env, funcEnv, sem)
       innerVal match {
         case PoolValue(items) if items.nonEmpty =>
-          // 1. Group identical distributions
           val groups = items.groupBy(identity).view.mapValues(_.size).toMap
 
-          // 2. Optimize each group
           val optimizedGroups = groups.map { case (dist, count) =>
             if (count == 1) {
               dist
             } else if (isBernoulli(dist)) {
-              // N x Bernoulli(p) -> Binomial(N, p)
               val p = dist(1)
               MathOps.fastBinomial(count, p)
             } else if (isUniformDie(dist)) {
-              // N x Uniform(1..S) -> NdS
-              // Pass S as a scalar distribution to sem.dice
               val sides = dist.keys.max
               sem.dice(sem.scalar(count), sem.scalar(sides))
             } else {
-              // Fallback: Iterative convolution
               (1 until count).foldLeft(dist)((acc, _) => sem.add(acc, dist))
             }
           }.toList
 
-          // 3. Combine group results
           DistValue(optimizedGroups.foldLeft(sem.scalar(0))((acc, d) => sem.add(acc, d)))
 
         case _ => 
@@ -273,12 +242,10 @@ object interpreter {
             if (count == 1) {
               dist
             } else if (isBernoulli(dist)) {
-              // N x Bernoulli(p) -> Bernoulli(p^N)
               val p = dist(1)
               val pProd = math.pow(p, count)
               Map(0 -> (1.0 - pProd), 1 -> pProd)
             } else {
-              // Fallback: Iterative multiplication
               (1 until count).foldLeft(dist)((acc, _) => sem.mul(acc, dist))
             }
           }.toList

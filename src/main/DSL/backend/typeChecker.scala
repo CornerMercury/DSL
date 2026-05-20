@@ -2,6 +2,8 @@ package DSL.backend
 
 import DSL.frontend.AST._
 import DSL.backend.typedAST._
+import DSL.backend.Builtins
+import DSL.backend.semanticTypes._
 import DSL.backend.{DistTy, ScalarTy, UnknownTy, GenericDistTy, PoolTy}
 import scala.collection.mutable
 
@@ -16,7 +18,6 @@ object typeChecker {
     val errors = mutable.ListBuffer.empty[TypeError]
     val funcEnv = program.topLevel.collect { case Left(f: Func) => f.name -> f }.toMap
     
-    // Build explicit signatures based on AST parameter types
     val funcSignatures: Map[String, Map[String, DistTy]] = 
       funcEnv.map { case (name, func) =>
         name -> func.params.map { p =>
@@ -41,38 +42,38 @@ object typeChecker {
       case TyIntLiteral(_, _) => ()
       case TyIdent(_, _) => ()
       case TyCustomDist(_, _) => ()
-      
       case TyPool(items, _) => items.foreach(checkTyExpr)
-      case TyPoolConcat(l, r, _) => 
-        checkTyExpr(l)
-        checkTyExpr(r)
+      case TyPoolConcat(l, r, _) => checkTyExpr(l); checkTyExpr(r)
       
       case TyBinary(BinaryOp.Dice, countExpr, sidesExpr, _) =>
-        if (!isScalar(countExpr)) {
-          errors += DiceCountMustBeScalar(countExpr.ty)
-        }
+        if (!isScalar(countExpr)) errors += DiceCountMustBeScalar(countExpr.ty)
         checkTyExpr(countExpr)
         checkTyExpr(sidesExpr)
 
       case TyUnary(op, inner, _) => op match {
-        case UnaryOp.Sum | UnaryOp.Prod =>
-          checkTyExpr(inner)
+        case UnaryOp.Sum | UnaryOp.Prod => checkTyExpr(inner)
         case _ => checkTyExpr(inner)
       }
       
       case TyCall(name, args, _) =>
         args.foreach(checkTyExpr)
         
-        name match {
-          case "keepLargest" | "keepSmallest" | "dropLargest" | "dropSmallest" =>
-            if (args.size == 3) {
-              if (!isScalar(args(0))) errors += ArgTypeMismatch(name, "count (arg 0)", ScalarTy, args(0).ty)
-              if (!isScalar(args(1))) errors += ArgTypeMismatch(name, "pool (arg 1)", ScalarTy, args(1).ty)
+        Builtins.all.get(name) match {
+          case Some(builtin) =>
+            if (args.size != builtin.paramTypes.size) {
+               // FIX: Use UnknownTy instead of DistTy for the placeholder error
+               errors += ArgTypeMismatch(name, "arity", UnknownTy, UnknownTy)
+            } else {
+              args.zip(builtin.paramTypes).foreach { case (argTyExpr, expectedTy) =>
+                val actual = inferTyType(argTyExpr, typeEnv)
+                if (!satisfies(actual, expectedTy)) {
+                  errors += ArgTypeMismatch(name, s"arg", expectedTy, actual)
+                }
+              }
             }
-          case _ => 
+          case None =>
             funcSignatures.get(name).foreach { signature =>
               funcEnv.get(name).foreach { funcDef =>
-                // Zip arguments with the function's defined parameters
                 args.zip(funcDef.params).foreach { case (argTyExpr, param) =>
                   signature.get(param.name).foreach { required =>
                     val actual = inferTyType(argTyExpr, typeEnv)
@@ -146,17 +147,9 @@ object typeChecker {
     ty == ScalarTy || ty == UnknownTy
 
   private def satisfies(actual: DistTy, required: DistTy): Boolean = {
-    if (required == PoolTy) {
-      actual == PoolTy
-    } 
-    else if (required == GenericDistTy) {
-      actual != PoolTy // Removed "&& actual != UnknownTy"
-    }
-    else if (required == ScalarTy) {
-      isScalarOrUnknown(actual)
-    }
-    else {
-      true
-    }
+    if (required == PoolTy) actual == PoolTy 
+    else if (required == GenericDistTy) actual != PoolTy
+    else if (required == ScalarTy) isScalarOrUnknown(actual)
+    else true
   }
 }
