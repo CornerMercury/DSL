@@ -4,13 +4,15 @@ import DSL.frontend.AST._
 import DSL.backend.typedAST._
 import DSL.backend.Builtins
 import DSL.backend.semanticTypes._
-import DSL.backend.{DistTy, ScalarTy, UnknownTy, GenericDistTy, PoolTy}
 import scala.collection.mutable
 
+// Aliases for Frontend types to avoid confusion with Backend types
+import DSL.frontend.AST.{Type => FType, DistType => FDistType, PoolType => FPoolType}
+
 sealed trait TypeError
-case class NonScalarComparison(op: String, leftTy: DistTy, rightTy: DistTy) extends TypeError
-case class ArgTypeMismatch(funcName: String, paramName: String, expected: DistTy, actual: DistTy) extends TypeError
-case class DiceCountMustBeScalar(actualTy: DistTy) extends TypeError
+case class NonScalarComparison(op: String, leftTy: Ty, rightTy: Ty) extends TypeError
+case class ArgTypeMismatch(funcName: String, paramName: String, expected: Ty, actual: Ty) extends TypeError
+case class DiceCountMustBeScalar(actualTy: Ty) extends TypeError
 
 object typeChecker {
 
@@ -18,25 +20,26 @@ object typeChecker {
     val errors = mutable.ListBuffer.empty[TypeError]
     val funcEnv = program.topLevel.collect { case Left(f: Func) => f.name -> f }.toMap
     
-    val funcSignatures: Map[String, Map[String, DistTy]] = 
+    val funcSignatures: Map[String, Map[String, Ty]] = 
       funcEnv.map { case (name, func) =>
         name -> func.params.map { p =>
           val ty = p.typ match {
-            case Some(PoolType) => PoolTy
-            case _ => GenericDistTy
+            case Some(FPoolType) => PoolTy
+            case Some(FDistType) => DistTy(GenericTy)
+            case None => UnknownTy
           }
           p.name -> ty
         }.toMap
       }
     
-    var typeEnv = Map.empty[String, DistTy]
+    var typeEnv = Map.empty[String, Ty]
 
     def checkExpr(expr: Expr): Unit = {
       val tyExpr = typer.annotate(expr)
       checkTyExpr(tyExpr)
     }
 
-    def isScalar(expr: TyExpr): Boolean = expr.ty == ScalarTy
+    def isScalar(expr: TyExpr): Boolean = expr.ty == DistTy(ScalarTy)
 
     def checkTyExpr(tyExpr: TyExpr): Unit = tyExpr match {
       case TyIntLiteral(_, _) => ()
@@ -61,7 +64,6 @@ object typeChecker {
         Builtins.all.get(name) match {
           case Some(builtin) =>
             if (args.size != builtin.paramTypes.size) {
-               // FIX: Use UnknownTy instead of DistTy for the placeholder error
                errors += ArgTypeMismatch(name, "arity", UnknownTy, UnknownTy)
             } else {
               args.zip(builtin.paramTypes).foreach { case (argTyExpr, expectedTy) =>
@@ -133,23 +135,23 @@ object typeChecker {
     errors.toList
   }
 
-  private def inferType(expr: Expr, typeEnv: Map[String, DistTy]): DistTy = {
+  private def inferType(expr: Expr, typeEnv: Map[String, Ty]): Ty = {
     val t = typer.annotate(expr)
     inferTyType(t, typeEnv)
   }
 
-  private def inferTyType(tyExpr: TyExpr, typeEnv: Map[String, DistTy]): DistTy = tyExpr match {
+  private def inferTyType(tyExpr: TyExpr, typeEnv: Map[String, Ty]): Ty = tyExpr match {
     case TyIdent(name, _) => typeEnv.getOrElse(name, UnknownTy)
     case _ => tyExpr.ty
   }
 
-  private def isScalarOrUnknown(ty: DistTy): Boolean = 
-    ty == ScalarTy || ty == UnknownTy
+  private def isScalarOrUnknown(ty: Ty): Boolean = 
+    ty == DistTy(ScalarTy) || ty == UnknownTy
 
-  private def satisfies(actual: DistTy, required: DistTy): Boolean = {
+  private def satisfies(actual: Ty, required: Ty): Boolean = {
     if (required == PoolTy) actual == PoolTy 
-    else if (required == GenericDistTy) actual != PoolTy
-    else if (required == ScalarTy) isScalarOrUnknown(actual)
+    else if (required == DistTy(GenericTy)) actual.isInstanceOf[DistTy]
+    else if (required == DistTy(ScalarTy)) isScalarOrUnknown(actual)
     else true
   }
 }

@@ -11,14 +11,14 @@ object typer {
   private def infer(expr: Expr): TyExpr = expr match {
 
     case Ident(name)      => TyIdent(name, UnknownTy)
-    case IntLiteral(n)    => TyIntLiteral(n, ScalarTy)
-    case CustomDist(dist) => TyCustomDist(dist, classify(dist))
+    case IntLiteral(n)    => TyIntLiteral(n, DistTy(ScalarTy))
+    case CustomDist(dist) => TyCustomDist(dist, DistTy(classify(dist)))
     
-    case Call(name, args) => TyCall(name, args.map(infer), GenericDistTy)
+    case Call(name, args) => TyCall(name, args.map(infer), DistTy(GenericTy))
 
     case MapExpr(funcName, inner) =>
       val tInner = infer(inner)
-      TyMapExpr(funcName, tInner, GenericDistTy)
+      TyMapExpr(funcName, tInner, DistTy(GenericTy))
 
     case Block(stmts, finalExpr) =>
       val tFinal = infer(finalExpr)
@@ -33,30 +33,27 @@ object typer {
 
     case Sum(inner) =>
       val tInner = infer(inner)
-      // If the inner expression is a scalar, Sum just returns that scalar.
-      // Otherwise, it aggregates a pool or passes through a distribution -> GenericDistTy
-      val resTy = if (tInner.ty == ScalarTy) ScalarTy else GenericDistTy
+      val resTy = if (tInner.ty == DistTy(ScalarTy)) DistTy(ScalarTy) else DistTy(GenericTy)
       TyUnary(UnaryOp.Sum, tInner, resTy)
 
     case Prod(inner) =>
       val tInner = infer(inner)
-      // Similar to Sum: if input is scalar, output is scalar.
-      val resTy = if (tInner.ty == ScalarTy) ScalarTy else GenericDistTy
+      val resTy = if (tInner.ty == DistTy(ScalarTy)) DistTy(ScalarTy) else DistTy(GenericTy)
       TyUnary(UnaryOp.Prod, tInner, resTy)
 
     case Max(inner) =>
       val tInner = infer(inner)
-      TyUnary(UnaryOp.Max, tInner, ScalarTy)
+      TyUnary(UnaryOp.Max, tInner, DistTy(ScalarTy))
 
     case Min(inner) =>
       val tInner = infer(inner)
-      TyUnary(UnaryOp.Min, tInner, ScalarTy)
+      TyUnary(UnaryOp.Min, tInner, DistTy(ScalarTy))
 
     case Dice(c, s) =>
       val tC = infer(c)
       val tS = infer(s)
       val resTy = c match {
-        case IntLiteral(1) => UniformTy
+        case IntLiteral(1) => DistTy(UniformTy)
         case _             => PoolTy
       }
       TyBinary(BinaryOp.Dice, tC, tS, resTy)
@@ -86,8 +83,8 @@ object typer {
     val tL = infer(l)
     val tR = infer(r)
     val resTy =
-      if (tL.ty == ScalarTy && tR.ty == ScalarTy) ScalarTy
-      else GenericDistTy
+      if (tL.ty == DistTy(ScalarTy) && tR.ty == DistTy(ScalarTy)) DistTy(ScalarTy)
+      else DistTy(GenericTy)
     TyBinary(op, tL, tR, resTy)
   }
 
@@ -96,8 +93,8 @@ object typer {
     val tR = infer(r)
     
     val resTy = 
-      if (tL.ty == ScalarTy && tR.ty == ScalarTy) ScalarTy
-      else BernoulliTy(0.0) 
+      if (tL.ty == DistTy(ScalarTy) && tR.ty == DistTy(ScalarTy)) DistTy(ScalarTy)
+      else DistTy(BernoulliTy(0.0)) 
       
     TyBinary(op, tL, tR, resTy)
   }

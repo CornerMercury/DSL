@@ -13,11 +13,14 @@ trait DistributionSemantics {
   def mul(d1: Distribution, d2: Distribution): Distribution
   def div(d1: Distribution, d2: Distribution): Distribution
 
-  def eq(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
-  def lt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
-  def le(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
-  def gt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
-  def ge(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution
+  // Updated to use the new 'Ty' root type. 
+  // In practice, these should be DistTy, but Ty allows for UnknownTy or PoolTy 
+  // if passed directly (though the interpreter usually handles PoolTy -> DistTy).
+  def eq(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution
+  def lt(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution
+  def le(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution
+  def gt(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution
+  def ge(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution
 
   def dice(count: Distribution, sides: Distribution): Distribution
 
@@ -48,13 +51,13 @@ object DefaultDistributionSemantics extends DistributionSemantics {
   override def div(d1: Distribution, d2: Distribution): Distribution =
     MathOps.convolveDiv(d1, d2)
 
-  override def eq(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+  override def eq(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution = {
     (ty1, ty2) match {
-      case (ScalarTy, ScalarTy) =>
+      case (DistTy(ScalarTy), DistTy(ScalarTy)) =>
         val res = if (d1.keys.head == d2.keys.head) 1 else 0
         MathOps.scalar(res)
 
-      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+      case (DistTy(BernoulliTy(p1)), DistTy(BernoulliTy(p2))) =>
         val pTrue = (1.0 - p1) * (1.0 - p2) + (p1 * p2)
         booleanDist(pTrue)
 
@@ -66,16 +69,16 @@ object DefaultDistributionSemantics extends DistributionSemantics {
     }
   }
 
-  override def lt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+  override def lt(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution = {
     (ty1, ty2) match {
-      case (ScalarTy, ScalarTy) =>
+      case (DistTy(ScalarTy), DistTy(ScalarTy)) =>
         val res = if (d1.keys.head < d2.keys.head) 1 else 0
         MathOps.scalar(res)
 
-      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+      case (DistTy(BernoulliTy(p1)), DistTy(BernoulliTy(p2))) =>
         booleanDist((1.0 - p1) * p2)
 
-      case (UniformTy, UniformTy) if d1.size == d2.size =>
+      case (DistTy(UniformTy), DistTy(UniformTy)) if d1.size == d2.size =>
         val n = d1.size
         booleanDist((1.0 - 1.0 / n) / 2.0)
 
@@ -83,16 +86,16 @@ object DefaultDistributionSemantics extends DistributionSemantics {
     }
   }
 
-  override def le(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+  override def le(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution = {
     (ty1, ty2) match {
-      case (ScalarTy, ScalarTy) =>
+      case (DistTy(ScalarTy), DistTy(ScalarTy)) =>
         val res = if (d1.keys.head <= d2.keys.head) 1 else 0
         MathOps.scalar(res)
 
-      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+      case (DistTy(BernoulliTy(p1)), DistTy(BernoulliTy(p2))) =>
         booleanDist(1.0 - (p1 * (1.0 - p2)))
 
-      case (UniformTy, UniformTy) if d1.size == d2.size =>
+      case (DistTy(UniformTy), DistTy(UniformTy)) if d1.size == d2.size =>
         val n = d1.size
         val pWin = (1.0 - 1.0 / n) / 2.0
         booleanDist(1.0 - pWin)
@@ -101,16 +104,16 @@ object DefaultDistributionSemantics extends DistributionSemantics {
     }
   }
 
-  override def gt(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+  override def gt(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution = {
     (ty1, ty2) match {
-      case (ScalarTy, ScalarTy) =>
+      case (DistTy(ScalarTy), DistTy(ScalarTy)) =>
         val res = if (d1.keys.head > d2.keys.head) 1 else 0
         MathOps.scalar(res)
 
-      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+      case (DistTy(BernoulliTy(p1)), DistTy(BernoulliTy(p2))) =>
         booleanDist(p1 * (1.0 - p2))
 
-      case (UniformTy, UniformTy) if d1.size == d2.size =>
+      case (DistTy(UniformTy), DistTy(UniformTy)) if d1.size == d2.size =>
         val n = d1.size
         booleanDist((1.0 - 1.0 / n) / 2.0)
 
@@ -118,16 +121,16 @@ object DefaultDistributionSemantics extends DistributionSemantics {
     }
   }
 
-  override def ge(d1: Distribution, ty1: DistTy, d2: Distribution, ty2: DistTy): Distribution = {
+  override def ge(d1: Distribution, ty1: Ty, d2: Distribution, ty2: Ty): Distribution = {
     (ty1, ty2) match {
-      case (ScalarTy, ScalarTy) =>
+      case (DistTy(ScalarTy), DistTy(ScalarTy)) =>
         val res = if (d1.keys.head >= d2.keys.head) 1 else 0
         MathOps.scalar(res)
 
-      case (BernoulliTy(p1), BernoulliTy(p2)) =>
+      case (DistTy(BernoulliTy(p1)), DistTy(BernoulliTy(p2))) =>
         booleanDist(1.0 - ((1.0 - p1) * p2))
 
-      case (UniformTy, UniformTy) if d1.size == d2.size =>
+      case (DistTy(UniformTy), DistTy(UniformTy)) if d1.size == d2.size =>
         val n = d1.size
         val pWin = (1.0 - 1.0 / n) / 2.0
         booleanDist(1.0 - pWin)

@@ -11,7 +11,7 @@ import DSL.backend.optimiser
 import DSL.backend.typeChecker
 import DSL.backend.interpreter
 import DSL.backend.typedAST._
-import DSL.backend.{DistTy, ScalarTy, BinomialTy, UniformTy, GenericDistTy}
+import DSL.backend._
 
 object ExitCode {
   val Success = 0
@@ -36,29 +36,46 @@ def main(path: String, flags: String*): Unit = {
 }
 
 private def showTy(e: TyExpr): String = {
-  def tyName(t: DistTy): String = t match {
-    case ScalarTy      => "Scalar"
-    case BinomialTy    => "Binomial"
-    case UniformTy     => "Uniform"
-    case GenericDistTy => "Generic"
+  def typeStr(t: Ty): String = t match {
+    case UnknownTy => "Unknown"
+    case PoolTy    => "Pool"
+    case DistTy(sub) => sub match {
+      case ScalarTy      => "Scalar"
+      case BernoulliTy(_) => "Bernoulli"
+      case BinomialTy    => "Binomial"
+      case UniformTy     => "Uniform"
+      case GenericTy     => "Generic"
+    }
   }
+
   e match {
-    case TyIntLiteral(n, t) => s"$n:${tyName(t)}"
-    case TyUnary(UnaryOp.Sum, inner, t)  => s"sum(${showTy(inner)}):${tyName(t)}"
-    case TyUnary(UnaryOp.Prod, inner, t) => s"prod(${showTy(inner)}):${tyName(t)}"
-    case TyUnary(UnaryOp.Max, inner, t)  => s"max(${showTy(inner)}):${tyName(t)}"
-    case TyUnary(UnaryOp.Min, inner, t)  => s"min(${showTy(inner)}):${tyName(t)}"
-    case TyMapExpr(f, inner, t)          => s"map($f, ${showTy(inner)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Dice, c, s, t) => s"dice(${showTy(c)},${showTy(s)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Add, l, r, t)  => s"(${showTy(l)}+${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Sub, l, r, t)  => s"(${showTy(l)}-${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Mul, l, r, t)  => s"(${showTy(l)}*${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Div, l, r, t)  => s"(${showTy(l)}/${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Eq, l, r, t)   => s"(${showTy(l)}==${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Lt, l, r, t)   => s"(${showTy(l)}<${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Le, l, r, t)   => s"(${showTy(l)}<=${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Gt, l, r, t)   => s"(${showTy(l)}>${showTy(r)}):${tyName(t)}"
-    case TyBinary(BinaryOp.Ge, l, r, t)   => s"(${showTy(l)}>=${showTy(r)}):${tyName(t)}"
+    case TyIntLiteral(n, t) => s"$n:${typeStr(t)}"
+    case TyIdent(name, t)   => s"$name:${typeStr(t)}"
+    case TyCustomDist(_, t) => s"<dist>:${typeStr(t)}"
+    case TyCall(fn, args, t)=> s"$fn(${args.map(showTy).mkString(",")}):${typeStr(t)}"
+
+    case TyUnary(UnaryOp.Sum, inner, t)  => s"sum(${showTy(inner)}):${typeStr(t)}"
+    case TyUnary(UnaryOp.Prod, inner, t) => s"prod(${showTy(inner)}):${typeStr(t)}"
+    case TyUnary(UnaryOp.Max, inner, t)  => s"max(${showTy(inner)}):${typeStr(t)}"
+    case TyUnary(UnaryOp.Min, inner, t)  => s"min(${showTy(inner)}):${typeStr(t)}"
+    
+    case TyMapExpr(f, inner, t)          => s"map($f, ${showTy(inner)}):${typeStr(t)}"
+    
+    case TyBinary(BinaryOp.Dice, c, s, t) => s"dice(${showTy(c)},${showTy(s)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Add, l, r, t)  => s"(${showTy(l)}+${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Sub, l, r, t)  => s"(${showTy(l)}-${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Mul, l, r, t)  => s"(${showTy(l)}*${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Div, l, r, t)  => s"(${showTy(l)}/${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Eq, l, r, t)   => s"(${showTy(l)}==${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Lt, l, r, t)   => s"(${showTy(l)}<${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Le, l, r, t)   => s"(${showTy(l)}<=${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Gt, l, r, t)   => s"(${showTy(l)}>${showTy(r)}):${typeStr(t)}"
+    case TyBinary(BinaryOp.Ge, l, r, t)   => s"(${showTy(l)}>=${showTy(r)}):${typeStr(t)}"
+
+    case TyPool(items, t) => s"Pool(${items.map(showTy).mkString(",")}):${typeStr(t)}"
+    case TyPoolConcat(l, r, t) => s"PoolConcat(${showTy(l)}, ${showTy(r)}):${typeStr(t)}"
+    case TyBlock(_, finalE, t) => s"Block(..., ${showTy(finalE)}):${typeStr(t)}"
+    case TyIfExpr(_, elseB, t) => s"IfExpr(..., ${showTy(elseB)}):${typeStr(t)}"
   }
 }
 

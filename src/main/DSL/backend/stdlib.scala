@@ -17,12 +17,12 @@ object Builtins {
 
   case class BuiltinFunction(
     name: String,
-    paramTypes: List[DistTy], // The expected types for the arguments
+    paramTypes: List[Ty], // The expected types for the arguments
     implementation: (List[Value], DistributionSemantics) => Value
   )
 
   private val functions: List[BuiltinFunction] = List(
-    BuiltinFunction("keepLargest", List(ScalarTy, ScalarTy, GenericDistTy),
+    BuiltinFunction("keepLargest", List(DistTy(ScalarTy), DistTy(ScalarTy), DistTy(GenericTy)),
       (args, sem) => {
         val k = args(0).asScalar
         val n = args(1).asScalar
@@ -31,7 +31,7 @@ object Builtins {
       }
     ),
     
-    BuiltinFunction("keepSmallest", List(ScalarTy, ScalarTy, GenericDistTy),
+    BuiltinFunction("keepSmallest", List(DistTy(ScalarTy), DistTy(ScalarTy), DistTy(GenericTy)),
       (args, sem) => {
         val k = args(0).asScalar
         val n = args(1).asScalar
@@ -40,7 +40,7 @@ object Builtins {
       }
     ),
 
-    BuiltinFunction("dropLargest", List(ScalarTy, ScalarTy, GenericDistTy),
+    BuiltinFunction("dropLargest", List(DistTy(ScalarTy), DistTy(ScalarTy), DistTy(GenericTy)),
       (args, sem) => {
         val k = args(0).asScalar
         val n = args(1).asScalar
@@ -49,7 +49,7 @@ object Builtins {
       }
     ),
 
-    BuiltinFunction("dropSmallest", List(ScalarTy, ScalarTy, GenericDistTy),
+    BuiltinFunction("dropSmallest", List(DistTy(ScalarTy), DistTy(ScalarTy), DistTy(GenericTy)),
       (args, sem) => {
         val k = args(0).asScalar
         val n = args(1).asScalar

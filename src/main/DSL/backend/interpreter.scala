@@ -105,13 +105,12 @@ object interpreter {
           if (n <= 0) {
             PoolValue(List())
           } else if (n == 1) {
-            // FIX: If rolling 1 die, return a single Distribution (DistValue), not a Pool.
-            // This aligns with the Type System which classifies 1dX as GenericDistTy.
+            // 1dX is DistTy(UniformTy)
             val sidesDist = forceDist(sVal, sem)
             val countOne = sem.scalar(1)
             DistValue(sem.dice(countOne, sidesDist))
           } else {
-            // If rolling multiple dice, return a Pool of distributions.
+            // NdX is PoolTy
             val sidesDist = forceDist(sVal, sem)
             val countOne = sem.scalar(1)
             val oneDieDist = sem.dice(countOne, sidesDist)
