@@ -35,7 +35,7 @@ class KeepDropSpec extends AnyFlatSpec {
   }
 
   "keepLargest" should "optimize k=1 to Max" in {
-    val expr = Call("keepLargest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("keepLargest", List(IntLiteral(1), Dice(IntLiteral(2), IntLiteral(6))))
     assertDist(expr)(
       1 -> (1.0/36.0),
       2 -> (3.0/36.0),
@@ -44,7 +44,7 @@ class KeepDropSpec extends AnyFlatSpec {
   }
 
   it should "handle the standard 4d6 drop lowest (keep 3)" in {
-    val expr = Call("keepLargest", List(IntLiteral(3), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("keepLargest", List(IntLiteral(3), Dice(IntLiteral(4), IntLiteral(6))))
     assertDist(expr)(
       3 -> (1.0/1296.0),
       17 -> (54.0/1296.0),
@@ -53,12 +53,12 @@ class KeepDropSpec extends AnyFlatSpec {
   }
 
   it should "be equivalent to sum when k equals n" in {
-    val expr = Call("keepLargest", List(IntLiteral(3), IntLiteral(3), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("keepLargest", List(IntLiteral(3), Dice(IntLiteral(3), IntLiteral(6))))
     assertDist(expr)(7 -> (15.0/216.0))
   }
 
   "keepSmallest" should "optimize k=1 to Min" in {
-    val expr = Call("keepSmallest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("keepSmallest", List(IntLiteral(1), Dice(IntLiteral(2), IntLiteral(6))))
     assertDist(expr)(
       1 -> (11.0/36.0),
       2 -> (9.0/36.0),
@@ -67,7 +67,7 @@ class KeepDropSpec extends AnyFlatSpec {
   }
 
   it should "correctly keep the smallest dice" in {
-    val expr = Call("keepSmallest", List(IntLiteral(3), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("keepSmallest", List(IntLiteral(3), Dice(IntLiteral(4), IntLiteral(6))))
     assertDist(expr)(
       3 -> (21.0/1296.0),
       17 -> (4.0/1296.0),
@@ -78,28 +78,52 @@ class KeepDropSpec extends AnyFlatSpec {
   "dropLargest" should "be equivalent to keepSmallest" in {
     // 4d6 drop 1 == 4d6 keep 3 (smallest)
     // We verify sum 17 matches the keepSmallest calculation (4/1296)
-    val expr = Call("dropLargest", List(IntLiteral(1), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("dropLargest", List(IntLiteral(1), Dice(IntLiteral(4), IntLiteral(6))))
     assertDist(expr)(17 -> (4.0/1296.0))
   }
 
   it should "handle drop 1 on 2d6 (keep min 1)" in {
     // 2d6 drop 1 is equivalent to Min(2d6)
     // P(6) = 1/36
-    val expr = Call("dropLargest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("dropLargest", List(IntLiteral(1), Dice(IntLiteral(2), IntLiteral(6))))
     assertDist(expr)(6 -> (1.0/36.0))
   }
 
   "dropSmallest" should "be equivalent to keepLargest" in {
     // 4d6 drop 1 == 4d6 keep 3 (largest)
     // We verify sum 17 matches the keepLargest calculation (54/1296)
-    val expr = Call("dropSmallest", List(IntLiteral(1), IntLiteral(4), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("dropSmallest", List(IntLiteral(1), Dice(IntLiteral(4), IntLiteral(6))))
     assertDist(expr)(17 -> (54.0/1296.0))
   }
 
   it should "handle drop 1 on 2d6 (keep max 1)" in {
     // 2d6 drop 1 is equivalent to Max(2d6)
     // P(1) = 1/36
-    val expr = Call("dropSmallest", List(IntLiteral(1), IntLiteral(2), Dice(IntLiteral(1), IntLiteral(6))))
+    val expr = Call("dropSmallest", List(IntLiteral(1), Dice(IntLiteral(2), IntLiteral(6))))
     assertDist(expr)(1 -> (1.0/36.0))
+  }
+
+  "Inhomogeneous Pools" should "keep largest 1 of 1d4 and 1d6" in {
+    val expr = Call("keepLargest", List(IntLiteral(1), Pool(List(Dice(IntLiteral(1), IntLiteral(4)), Dice(IntLiteral(1), IntLiteral(6))))))
+    assertDist(expr)(
+      4 -> (7.0/24.0),
+      6 -> (4.0/24.0)
+    )
+  }
+
+  it should "keep smallest 1 of 1d6 and 1d8" in {
+    val expr = Call("keepSmallest", List(IntLiteral(1), Pool(List(Dice(IntLiteral(1), IntLiteral(6)), Dice(IntLiteral(1), IntLiteral(8))))))
+    assertDist(expr)(
+      1 -> (13.0/48.0),
+      6 -> (3.0/48.0)
+    )
+  }
+
+  it should "sum 1d4 and 1d6 (keep 2)" in {
+    val expr = Call("keepLargest", List(IntLiteral(2), Pool(List(Dice(IntLiteral(1), IntLiteral(4)), Dice(IntLiteral(1), IntLiteral(6))))))
+    assertDist(expr)(
+      5 -> (4.0/24.0),
+      10 -> (1.0/24.0)
+    )
   }
 }
