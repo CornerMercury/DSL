@@ -6,7 +6,7 @@ import parsley.{Success, Failure}
 import DSL.frontend.parser
 import DSL.frontend.scopeChecker
 import DSL.frontend.AST.Program
-import DSL.backend.{interpreter, optimiser, Distribution}
+import DSL.backend.{interpreter, optimiser, typeChecker, Distribution}
 
 class InterpreterMapSpec extends AnyFlatSpec {
 
@@ -16,7 +16,11 @@ class InterpreterMapSpec extends AnyFlatSpec {
         val scopeErrors = scopeChecker.check(p)
         assert(scopeErrors.isEmpty, s"Scope errors: $scopeErrors")
         val optimised = optimiser.optimise(p)
-        interpreter.interpretProgram(optimised)
+        
+        typeChecker.check(optimised) match {
+          case Left(errs) => fail(s"Type errors: $errs")
+          case Right(typedProg) => interpreter.interpretProgram(typedProg)
+        }
       case Failure(err) =>
         fail(s"Parse error: $err")
     }

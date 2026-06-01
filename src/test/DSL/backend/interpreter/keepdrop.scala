@@ -3,6 +3,7 @@ package DSL
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers._
 import DSL.frontend.AST._
+import DSL.backend.typeChecker
 import DSL.backend.interpreter
 
 class KeepDropSpec extends AnyFlatSpec {
@@ -10,28 +11,27 @@ class KeepDropSpec extends AnyFlatSpec {
   /**
    * Helper to wrap a single expression into a Program, interpret it,
    * and verify the resulting distribution.
-   * 
-   * Updated: Does NOT enforce that the distribution only contains the expected keys.
-   * It only verifies that the specified keys have the correct probabilities
-   * and that the total probability sums to 1.0.
    */
   def assertDist(expr: Expr)(expected: (Int, Double)*): Unit = {
     val prog = Program(List(Right(expr)))
-    val dists = interpreter.interpretProgram(prog)
-    val dist = dists.head
-    val expMap = expected.toMap
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(s"Type errors: $errs")
+      case Right(typedProg) =>
+        val dists = interpreter.interpretProgram(typedProg)
+        val dist = dists.head
+        val expMap = expected.toMap
 
-    // Verify specified keys match expected probabilities
-    for ((k, p) <- expMap) {
-      dist.get(k) match {
-        case Some(actual) => actual shouldBe p +- 1e-9
-        case None => fail(s"Expected key $k not found in distribution. Keys were: ${dist.keySet}")
-      }
+        for ((k, p) <- expMap) {
+          dist.get(k) match {
+            case Some(actual) => actual shouldBe p +- 1e-9
+            case None => fail(s"Expected key $k not found in distribution. Keys were: ${dist.keySet.toSeq.sorted.mkString(", ")}")
+          }
+        }
+        
+        // Verify total probability is 1.0 (conservation of probability)
+        val totalProb = dist.values.sum
+        totalProb shouldBe 1.0 +- 1e-9
     }
-    
-    // Verify total probability is 1.0 (conservation of probability)
-    val totalProb = dist.values.sum
-    totalProb shouldBe 1.0 +- 1e-9
   }
 
   "keepLargest" should "optimize k=1 to Max" in {

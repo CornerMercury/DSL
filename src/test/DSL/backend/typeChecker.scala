@@ -16,7 +16,10 @@ class TypeCheckerSpec extends AnyFlatSpec {
         val scopeErrors = scopeChecker.check(p)
         assert(scopeErrors.isEmpty, s"Scope errors: $scopeErrors")
         val optimised = optimiser.optimise(p)
-        typeChecker.check(optimised)
+        typeChecker.check(optimised) match {
+          case Left(errs) => errs
+          case Right(_) => Nil
+        }
       case Failure(err) =>
         fail(s"Parse error: $err")
     }

@@ -3,6 +3,7 @@ package DSL
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers._
 import DSL.frontend.AST._
+import DSL.backend.typeChecker
 import DSL.backend.interpreter
 
 class PoolSpec extends AnyFlatSpec {
@@ -10,29 +11,27 @@ class PoolSpec extends AnyFlatSpec {
   /**
    * Helper to wrap a single expression into a Program, interpret it,
    * and verify the resulting distribution.
-   * 
-   * Unlike the ComparisonSpec helper, this checks only the provided 
-   * expected keys. This is necessary for Pools which produce ranges of outcomes,
-   * allowing us to spot-check min, max, and specific probabilities without 
-   * defining the entire map.
    */
   def assertDist(expr: Expr)(expected: (Int, Double)*): Unit = {
     val prog = Program(List(Right(expr)))
-    val dists = interpreter.interpretProgram(prog)
-    val dist = dists.head
-    val expMap = expected.toMap
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(s"Type errors: $errs")
+      case Right(typedProg) =>
+        val dists = interpreter.interpretProgram(typedProg)
+        val dist = dists.head
+        val expMap = expected.toMap
 
-    // 1. Ensure all expected keys exist
-    for (k <- expMap.keys) {
-      if (!dist.contains(k)) {
-        // Fix: keys returns Iterable, so we convert to Seq to use sorted
-        fail(s"Expected key $k missing in distribution. Keys were: ${dist.keys.toSeq.sorted.mkString(", ")}")
-      }
-    }
+        // 1. Ensure all expected keys exist
+        for (k <- expMap.keys) {
+          if (!dist.contains(k)) {
+            fail(s"Expected key $k missing in distribution. Keys were: ${dist.keys.toSeq.sorted.mkString(", ")}")
+          }
+        }
 
-    // 2. Check probabilities
-    for ((k, p) <- expMap) {
-      dist(k) shouldBe p +- 1e-9
+        // 2. Check probabilities
+        for ((k, p) <- expMap) {
+          dist(k) shouldBe p +- 1e-9
+        }
     }
   }
 

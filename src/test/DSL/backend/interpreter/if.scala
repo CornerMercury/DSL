@@ -1,8 +1,9 @@
 package DSL
 
 import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.matchers.should.Matchers.*
+import org.scalatest.matchers.should.Matchers._
 import DSL.frontend.AST._
+import DSL.backend.typeChecker
 import DSL.backend.interpreter
 
 class IfInterpreterSpec extends AnyFlatSpec {
@@ -17,8 +18,12 @@ class IfInterpreterSpec extends AnyFlatSpec {
         elseBranch = Block(Nil, IntLiteral(0))
       ))
     ))
-    val dists = interpreter.interpretProgram(prog)
-    dists.head shouldEqual Map(100 -> 1.0)
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(errs.toString)
+      case Right(typedProg) =>
+        val dists = interpreter.interpretProgram(typedProg)
+        dists.head shouldEqual Map(100 -> 1.0)
+    }
   }
 
   it should "handle multiple sampled variables in the header" in {
@@ -39,9 +44,13 @@ class IfInterpreterSpec extends AnyFlatSpec {
       ))
     ))
 
-    val result = interpreter.interpretProgram(prog).head
-    result(1) shouldBe (6.0 / 36.0) +- 1e-9
-    result(0) shouldBe (30.0 / 36.0) +- 1e-9
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(errs.toString)
+      case Right(typedProg) =>
+        val result = interpreter.interpretProgram(typedProg).head
+        result(1) shouldBe (6.0 / 36.0) +- 1e-9
+        result(0) shouldBe (30.0 / 36.0) +- 1e-9
+    }
   }
 
   it should "handle nested elif branches with sampling" in {
@@ -64,10 +73,14 @@ class IfInterpreterSpec extends AnyFlatSpec {
       ))
     ))
 
-    val result = interpreter.interpretProgram(prog).head
-    result(10) shouldBe 0.3333333333 +- 1e-5
-    result(20) shouldBe 0.3333333333 +- 1e-5
-    result(30) shouldBe 0.3333333333 +- 1e-5
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(errs.toString)
+      case Right(typedProg) =>
+        val result = interpreter.interpretProgram(typedProg).head
+        result(10) shouldBe 0.3333333333 +- 1e-5
+        result(20) shouldBe 0.3333333333 +- 1e-5
+        result(30) shouldBe 0.3333333333 +- 1e-5
+    }
   }
 
   it should "merge outcomes from branches with complex distributions" in {
@@ -85,10 +98,14 @@ class IfInterpreterSpec extends AnyFlatSpec {
       ))
     ))
 
-    val result = interpreter.interpretProgram(prog).head
-    // 50% chance of 0 (else). 50% chance of d6 (1/12 each)
-    result(0) shouldBe 0.5 +- 1e-9
-    result(1) shouldBe (0.5 / 6.0) +- 1e-9
-    result(6) shouldBe (0.5 / 6.0) +- 1e-9
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(errs.toString)
+      case Right(typedProg) =>
+        val result = interpreter.interpretProgram(typedProg).head
+        // 50% chance of 0 (else). 50% chance of d6 (1/12 each)
+        result(0) shouldBe 0.5 +- 1e-9
+        result(1) shouldBe (0.5 / 6.0) +- 1e-9
+        result(6) shouldBe (0.5 / 6.0) +- 1e-9
+    }
   }
 }

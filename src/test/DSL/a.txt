@@ -1,1 +1,8 @@
-keepSmallest(1, [d6, d8])
+func f(n, x) {
+    if n == 0 {
+        0
+    } else {
+        f(n-1, x)
+    }
+}
+f(100, d6)

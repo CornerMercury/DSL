@@ -3,23 +3,25 @@ package DSL
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers._
 import DSL.frontend.AST._
+import DSL.backend.typeChecker
 import DSL.backend.interpreter
 
 class ComparisonSpec extends AnyFlatSpec {
 
-  /**
-   * Helper to wrap a single expression into a Program, interpret it,
-   * and verify the resulting distribution.
-   */
   def assertDist(expr: Expr)(expected: (Int, Double)*): Unit = {
     val prog = Program(List(Right(expr)))
-    val dists = interpreter.interpretProgram(prog)
-    val dist = dists.head
-    val expMap = expected.toMap
+    
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(s"Type errors found: $errs")
+      case Right(typedProg) =>
+        val dists = interpreter.interpretProgram(typedProg)
+        val dist = dists.head
+        val expMap = expected.toMap
 
-    dist.keySet shouldEqual expMap.keySet
-    for ((k, p) <- expMap) {
-      dist(k) shouldBe p +- 1e-9
+        dist.keySet shouldEqual expMap.keySet
+        for ((k, p) <- expMap) {
+          dist(k) shouldBe p +- 1e-9
+        }
     }
   }
 
@@ -108,8 +110,12 @@ class ComparisonSpec extends AnyFlatSpec {
       )
     )
 
-    val dists = interpreter.interpretProgram(prog)
-    val d = dists.head
-    d shouldEqual Map(0 -> 0.5, 1 -> 0.5)
+    typeChecker.check(prog) match {
+      case Left(errs) => fail(errs.toString)
+      case Right(typedProg) =>
+        val dists = interpreter.interpretProgram(typedProg)
+        val d = dists.head
+        d shouldEqual Map(0 -> 0.5, 1 -> 0.5)
+    }
   }
 }
