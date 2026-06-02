@@ -15,11 +15,13 @@ object optimiser {
     eliminateDeadTopLevelStores(optimised)
   }
 
-  private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
-    val optStmts = eliminateDeadStores(propagateConstants(stmts))
-    val optFinal = optimiseExpr(finalExpr, Map.empty)
-    (optStmts, optFinal)
-  }
+private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
+  val propagated = propagateConstants(stmts)
+  val finalUsed  = getUsed(finalExpr)
+  val optStmts   = eliminateDeadStores(propagated, finalUsed)
+  val optFinal   = optimiseExpr(finalExpr, Map.empty)
+  (optStmts, optFinal)
+}
 
   private def propagateConstants(stmts: List[Stmt]): List[Stmt] = {
     val (finalStmts, _) =
@@ -218,9 +220,9 @@ object optimiser {
     rev
   }
 
-  private def eliminateDeadStores(stmts: List[Stmt]): List[Stmt] = {
+  private def eliminateDeadStores(stmts: List[Stmt], externalLive: Set[String]): List[Stmt] = {
     val (rev, _) =
-      stmts.reverse.foldLeft((List.empty[Stmt], Set.empty[String])) {
+      stmts.reverse.foldLeft((List.empty[Stmt], externalLive)) {
         case ((acc, live), stmt) => stmt match {
 
           case Assign(n, e) if live.contains(n) =>

@@ -1,8 +1,5 @@
-func f(n, x) {
-    if n == 0 {
-        0
-    } else {
-        f(n-1, x)
-    }
+func f(v) {
+    cond = (v == 1);
+    cond * 100 + (1 - cond) * 1
 }
-f(100, d6)
+map(f, d6)
