@@ -99,4 +99,21 @@ class OptimiserSpec extends AnyFlatSpec with Matchers {
 
     optimize(ast: _*) shouldBe expected
   }
+
+  it should "keep assignments that are used in the block's final expression" in {
+    val block = Block(
+      List(Assign("cond", Eq(Ident("v"), IntLiteral(1)))),
+      Add(
+        Mul(Ident("cond"), IntLiteral(100)),
+        Mul(Sub(IntLiteral(1), Ident("cond")), IntLiteral(1))
+      )
+    )
+
+    val result = optimize(Right(block)).headOption  
+    result match {
+      case Some(Right(Block(stmts, _))) =>
+        stmts should contain(Assign("cond", Eq(Ident("v"), IntLiteral(1))))
+      case _ => fail("Block not preserved or Assign was incorrectly removed")
+    }
+  }
 }
