@@ -10,7 +10,6 @@ import scala.collection.mutable
 import DSL.frontend.AST.{Type => FType, DistType => FDistType, PoolType => FPoolType}
 
 sealed trait TypeError
-case class NonScalarComparison(op: String, leftTy: Ty, rightTy: Ty) extends TypeError
 case class ArgTypeMismatch(funcName: String, paramName: String, expected: Ty, actual: Ty) extends TypeError
 case class DiceCountMustBeScalar(actualTy: Ty) extends TypeError
 
