@@ -85,7 +85,7 @@ object typer {
       val tInner = infer(inner, env)
       val resTy = tInner.ty match {
         case DistTy(x) => DistTy(x)
-        case PoolTy    => DistTy(GenericTy)
+        case _ => DistTy(GenericTy)
       }
       TyUnary(UnaryOp.Sum, tInner, resTy)
 
@@ -108,10 +108,25 @@ object typer {
     case Dice(c, s) =>
       val tC = infer(c, env)
       val tS = infer(s, env)
+      
       val resTy = c match {
-        case IntLiteral(1) => DistTy(UniformTy)
-        case _             => PoolTy
+        case IntLiteral(1) =>
+          s match {
+            case IntLiteral(_) => DistTy(UniformTy)
+            case _             => tS.ty match {
+              case DistTy(sub) => DistTy(sub)
+              case PoolTy      => DistTy(GenericTy)
+            }
+          }
+        case IntLiteral(0) =>
+          DistTy(ScalarTy)
+        case IntLiteral(n) if n > 1 =>
+          PoolTy
+        case _ =>
+          // Non-literal count (variable, expression, etc.) → treat as pool
+          PoolTy
       }
+  
       TyBinary(BinaryOp.Dice, tC, tS, resTy)
 
     case Add(l, r) => binary(l, r, BinaryOp.Add, env)

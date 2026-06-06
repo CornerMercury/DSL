@@ -39,14 +39,11 @@ object interpreter {
     case PoolValue(items) => items.foldLeft(sem.scalar(0))((acc, d) => sem.add(acc, d))
   }
 
-  // Helper to get the most specific type available.
-  // If the expression is an Identifier, check the runtime environment to see if a specific type was passed in.
-  // Otherwise, use the compile-time static type.
   private def resolveType(expr: TyExpr, env: Env): Ty = expr match {
     case TyIdent(name, _) => 
       env.get(name) match {
-        case Some((t, _)) => t // Use runtime type from env
-        case None => expr.ty   // Fallback to static type
+        case Some((t, _)) => t
+        case None => expr.ty
       }
     case _ => expr.ty
   }
@@ -113,27 +110,30 @@ object interpreter {
       PoolValue(leftItems ++ rightItems)
 
     case TyBinary(BinaryOp.Dice, countExpr, sidesExpr, _) =>
-      val actualCountTy = resolveType(countExpr, env)
+      val countVal = eval(countExpr, env, funcEnv, sem)
+      val sidesVal = eval(sidesExpr, env, funcEnv, sem)
       
-      if (actualCountTy != DistTy(ScalarTy)) {
-        throw new IllegalStateException("Dice count must be a scalar distribution")
+      val sidesDist = forceDist(sidesVal, sem)
+      
+      val n: Int = countVal match {
+        case DistValue(d) =>
+          if (d.size != 1)
+            throw new IllegalStateException(s"Dice count must be a single value, got ${d.size} outcomes")
+          d.keys.head.toInt
+        case PoolValue(items) =>
+          if (items.size != 1)
+            throw new IllegalStateException(s"Dice count must be a single value, got pool with ${items.size} items")
+          items.head.keys.head.toInt
+        case _ =>
+          throw new IllegalStateException(s"Expected DistValue or PoolValue for dice count, got $countVal")
       }
-
-      val cVal = eval(countExpr, env, funcEnv, sem)
-      val sVal = eval(sidesExpr, env, funcEnv, sem)
-
-      val n = expectDist(cVal).keys.head
       
-      if (n <= 0) {
-        PoolValue(List())
-      } else if (n == 1) {
-        val sidesDist = forceDist(sVal, sem)
-        val countOne = sem.scalar(1)
-        DistValue(sem.dice(countOne, sidesDist))
+      if (n < 0) throw new IllegalStateException(s"Dice count cannot be negative: $n")
+      
+      if (n == 0) {
+        PoolValue(Nil)   // empty pool
       } else {
-        val sidesDist = forceDist(sVal, sem)
-        val countOne = sem.scalar(1)
-        val oneDieDist = sem.dice(countOne, sidesDist)
+        val oneDieDist = sem.dice(sem.scalar(1), sidesDist)
         PoolValue(List.fill(n)(oneDieDist))
       }
 
@@ -255,7 +255,8 @@ object interpreter {
           }
 
         case DistTy(_) =>
-          eval(inner, env, funcEnv, sem)
+          val v = eval(inner, env, funcEnv, sem)
+          DistValue(forceDist(v, sem))
         
         case UnknownTy =>
           throw new IllegalStateException("Cannot Sum UnknownTy")
@@ -287,35 +288,22 @@ object interpreter {
           }
 
         case DistTy(_) =>
-          eval(inner, env, funcEnv, sem)
+          val v = eval(inner, env, funcEnv, sem)
+          DistValue(forceDist(v, sem))
 
         case UnknownTy =>
            throw new IllegalStateException("Cannot Prod UnknownTy")
       }
 
     case TyUnary(UnaryOp.Max, i, _) =>
-      resolveType(i, env) match {
-        case PoolTy => 
-          val d = forceDist(eval(i, env, funcEnv, sem), sem)
-          DistValue(sem.max(d))
-        case DistTy(_) =>
-          val d = expectDist(eval(i, env, funcEnv, sem))
-          DistValue(sem.max(d))
-        case UnknownTy =>
-          throw new IllegalStateException("Cannot Max UnknownTy")
-      }
+      val v = eval(i, env, funcEnv, sem)
+      val d = forceDist(v, sem)
+      DistValue(sem.max(d))
 
     case TyUnary(UnaryOp.Min, i, _) =>
-      resolveType(i, env) match {
-        case PoolTy =>
-          val d = forceDist(eval(i, env, funcEnv, sem), sem)
-          DistValue(sem.min(d))
-        case DistTy(_) =>
-          val d = expectDist(eval(i, env, funcEnv, sem))
-          DistValue(sem.min(d))
-        case UnknownTy =>
-           throw new IllegalStateException("Cannot Min UnknownTy")
-      }
+      val v = eval(i, env, funcEnv, sem)
+      val d = forceDist(v, sem)
+      DistValue(sem.min(d))
 
     case TyBinary(op, l, r, _) =>
       val lVal = eval(l, env, funcEnv, sem)
@@ -324,15 +312,8 @@ object interpreter {
       val actualTyL = resolveType(l, env)
       val actualTyR = resolveType(r, env)
 
-      val dL = actualTyL match {
-        case PoolTy => forceDist(lVal, sem)
-        case DistTy(_) => expectDist(lVal)
-      }
-      
-      val dR = actualTyR match {
-        case PoolTy => forceDist(rVal, sem)
-        case DistTy(_) => expectDist(rVal)
-      }
+      val dL = forceDist(lVal, sem)
+      val dR = forceDist(rVal, sem)
       
       val res = op match {
         case BinaryOp.Add  => sem.add(dL, dR)
