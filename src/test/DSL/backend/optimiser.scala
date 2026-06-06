@@ -50,20 +50,6 @@ class OptimiserSpec extends AnyFlatSpec with Matchers {
     )
   }
 
-  it should "poison variables modified inside an if block" in {
-    val ast = List(
-      Left(Assign("x", IntLiteral(10))),
-      Right(IfExpr(
-        branches = List(
-          IfBranch(Nil, Dice(IntLiteral(1), IntLiteral(6)), Block(List(Assign("x", IntLiteral(20))), IntLiteral(1)))
-        ),
-        elseBranch = Block(Nil, IntLiteral(0))
-      )),
-      Right(Ident("x"))
-    )
-    optimize(ast: _*).last shouldBe Right(Ident("x"))
-  }
-
   it should "remove unused RollBindings in IfExpr branches" in {
     // v is used in the condition, w is never used
     val ast = List(

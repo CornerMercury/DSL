@@ -6,22 +6,47 @@ object optimiser {
 
   def optimise(program: Program): Program =
     Program(optimiseTopLevel(program.topLevel))
+  
+  private def propagateConstantsTopLevel(
+      items: List[Either[Stmt, Expr]]
+  ): List[Either[Stmt, Expr]] = {
+    val (result, _) = items.foldLeft((List.empty[Either[Stmt, Expr]], Map.empty[String, Expr])) {
+      case ((acc, env), item) =>
+        item match {
+          case Left(Assign(name, expr)) =>
+            val optExpr = optimiseExpr(expr, env)
+            val newEnv = optExpr match {
+              case lit: IntLiteral => env + (name -> lit)
+              case _               => env - name
+            }
+            (acc :+ Left(Assign(name, optExpr)), newEnv)
 
-  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] = {
-    val optimised = topLevel.map {
-      case Left(stmt) => Left(optimiseStmt(stmt))
-      case Right(expr) => Right(optimiseExpr(expr, Map.empty))
+          case Left(func: Func) =>
+            val optFunc = optimiseStmt(func).asInstanceOf[Func]
+            (acc :+ Left(optFunc), env)
+
+          case Right(expr) =>
+            val optExpr = optimiseExpr(expr, env)
+            val assigned = assignedVarsExpr(optExpr)
+            val newEnv = env -- assigned
+            (acc :+ Right(optExpr), newEnv)
+        }
     }
-    eliminateDeadTopLevelStores(optimised)
+    result
   }
 
-private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
-  val propagated = propagateConstants(stmts)
-  val finalUsed  = getUsed(finalExpr)
-  val optStmts   = eliminateDeadStores(propagated, finalUsed)
-  val optFinal   = optimiseExpr(finalExpr, Map.empty)
-  (optStmts, optFinal)
-}
+  private def optimiseTopLevel(topLevel: List[Either[Stmt, Expr]]): List[Either[Stmt, Expr]] = {
+    val propagated = propagateConstantsTopLevel(topLevel)
+    eliminateDeadTopLevelStores(propagated)
+  }
+
+  private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr) = {
+    val propagated = propagateConstants(stmts)
+    val finalUsed  = getUsed(finalExpr)
+    val optStmts   = eliminateDeadStores(propagated, finalUsed)
+    val optFinal   = optimiseExpr(finalExpr, Map.empty)
+    (optStmts, optFinal)
+  }
 
   private def propagateConstants(stmts: List[Stmt]): List[Stmt] = {
     val (finalStmts, _) =
@@ -41,7 +66,6 @@ private def optimiseBlock(stmts: List[Stmt], finalExpr: Expr): (List[Stmt], Expr
             (acc :+ Func(n, p, Block(optStmts, optFinal)), env)
         }
       }
-
     finalStmts
   }
 
