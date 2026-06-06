@@ -83,12 +83,18 @@ object typer {
 
     case Sum(inner) =>
       val tInner = infer(inner, env)
-      val resTy = if (tInner.ty == DistTy(ScalarTy)) DistTy(ScalarTy) else DistTy(GenericTy)
+      val resTy = tInner.ty match {
+        case DistTy(x) => DistTy(x)
+        case PoolTy    => DistTy(GenericTy)
+      }
       TyUnary(UnaryOp.Sum, tInner, resTy)
 
     case Prod(inner) =>
       val tInner = infer(inner, env)
-      val resTy = if (tInner.ty == DistTy(ScalarTy)) DistTy(ScalarTy) else DistTy(GenericTy)
+      val resTy = tInner.ty match {
+        case DistTy(x) => DistTy(x)
+        case PoolTy    => DistTy(GenericTy)
+      }
       TyUnary(UnaryOp.Prod, tInner, resTy)
 
     case Max(inner) =>
