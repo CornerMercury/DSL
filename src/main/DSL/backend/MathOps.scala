@@ -248,17 +248,13 @@ object MathOps {
   private def nthLowestHomogeneous(k: Int, n: Int, die: Distribution): Distribution = {
     val faces = die.keys.toSeq.sorted
     val result = mutable.Map[Int, Double]()
-    
     var prevCDF = 0.0
 
     for (face <- faces) {
-      // Calculate probability that a single die <= face
       val pLeq = die.filterKeys(_ <= face).values.sum
       val currCDF = binomialCDF(n, pLeq, k)
-      
-      val pVal = currCDF - prevCDF
-      if (pVal > 0.0) result(face) = pVal
-      
+      val pVal = math.max(0.0, currCDF - prevCDF)
+      result(face) = pVal
       prevCDF = currCDF
     }
     result.toMap
@@ -286,8 +282,8 @@ object MathOps {
 
     for (face <- allFaces) {
       val cdf = poissonBinomialCDF(k, pool, face)
-      val pVal = cdf - prevCDF
-      if (pVal > 0.0) result(face) = pVal
+      val pVal = math.max(0.0, cdf - prevCDF)
+      result(face) = pVal  
       prevCDF = cdf
     }
     result.toMap
