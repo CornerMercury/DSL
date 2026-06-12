@@ -159,10 +159,10 @@ object interpreter {
             throw new IllegalArgumentException(s"Function ${func.name} expects ${func.params.size} arguments, got ${args.size}")
           }
 
-          val evaluatedArgs = args.map(a => forceDist(eval(a, env, funcEnv, sem), sem))
+          val evaluatedArgs = args.map(a => eval(a, env, funcEnv, sem))
           
           val newEnv = env ++ func.params.zip(args).zip(evaluatedArgs).map { 
-            case ((param, argExpr), value) => param.name -> (argExpr.ty, DistValue(value))
+            case ((param, argExpr), value) => param.name -> (argExpr.ty, value)
           }
           
           eval(func.body, newEnv, funcEnv, sem)
